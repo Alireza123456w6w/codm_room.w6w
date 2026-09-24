@@ -73,6 +73,7 @@ function modal(html, wide) {
   ov.addEventListener('click', (e) => { if (e.target === ov) closeModal(); });
   $('#modalRoot').appendChild(ov);
   document.body.style.overflow = 'hidden';
+  if ($('#nrTeams')) updLayoutHint();
 }
 function closeModal() { const m = $('.modal-ov'); if (m) m.remove(); document.body.style.overflow = ''; }
 window.closeModal = closeModal;
@@ -80,6 +81,39 @@ function copyTxt(txt, btn) {
   navigator.clipboard.writeText(txt).then(() => { toast('کپی شد ✅', 'ok', 1600); }).catch(() => {});
 }
 window.copyTxt = copyTxt;
+
+/* ─────────── انیمیشن‌ها ─────────── */
+const Reveal = {
+  io: null,
+  arm() {
+    const els = document.querySelectorAll('.reveal:not(.in)');
+    if (!els.length) return;
+    if (!('IntersectionObserver' in window)) { els.forEach((el) => el.classList.add('in')); return; }
+    if (!this.io) this.io = new IntersectionObserver((es) => {
+      es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); this.io.unobserve(e.target); } });
+    }, { threshold: 0.1, rootMargin: '0px 0px -30px 0px' });
+    els.forEach((el) => this.io.observe(el));
+  }
+};
+window.Reveal = Reveal;
+/* شمارنده متحرک آمار */
+function countUp(el, target) {
+  const n = Number(target) || 0;
+  if (!el) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches || n <= 0) { el.textContent = fa(money(n)); return; }
+  const dur = 1100, t0 = performance.now();
+  const tick = (t) => {
+    const k = Math.min(1, (t - t0) / dur);
+    const eased = 1 - Math.pow(1 - k, 3);
+    el.textContent = fa(money(Math.round(n * eased)));
+    if (k < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+window.countUp = countUp;
+function armStats() {
+  document.querySelectorAll('[data-cnt]').forEach((el) => { if (el.dataset.done) return; el.dataset.done = '1'; countUp(el, el.dataset.cnt); });
+}
 
 /* ─────────── تنظیم آدرس سرور ─────────── */
 function apiConfigModal(msg) {
@@ -214,34 +248,35 @@ async function viewHome() {
     </div>
   </section>
   <div class="stats-strip"><div class="stats-grid">
-    <div class="stat"><div class="v">${fa(money(stats.users))}</div><div class="l">🪖 سرباز ثبت‌نام‌شده</div></div>
-    <div class="stat"><div class="v">${fa(money(stats.rooms))}</div><div class="l">🎮 روم برگزارشده</div></div>
-    <div class="stat"><div class="v">${fa(money(stats.entries))}</div><div class="l">🎯 ورودی قطعی</div></div>
-    <div class="stat"><div class="v">${fa(money(stats.prizesPaid))}</div><div class="l">🏆 جوایز پرداخت‌شده (تومان)</div></div>
+    <div class="stat"><div class="v" data-cnt="${num2(stats.users)}">۰</div><div class="l">🪖 سرباز ثبت‌نام‌شده</div></div>
+    <div class="stat"><div class="v" data-cnt="${num2(stats.rooms)}">۰</div><div class="l">🎮 روم برگزارشده</div></div>
+    <div class="stat"><div class="v" data-cnt="${num2(stats.entries)}">۰</div><div class="l">🎯 ورودی قطعی</div></div>
+    <div class="stat"><div class="v" data-cnt="${num2(stats.prizesPaid)}">۰</div><div class="l">🏆 جوایز پرداخت‌شده (تومان)</div></div>
   </div></div>
   <section class="sec">
-    <div class="sec-head"><h2>چرا <span>CODM ROOMS</span>؟</h2><p>هر چیزی که برای یک تورنمنت حرفه‌ای لازم داری، یک‌جا</p></div>
+    <div class="sec-head reveal"><h2>چرا <span>CODM ROOMS</span>؟</h2><p>هر چیزی که برای یک تورنمنت حرفه‌ای لازم داری، یک‌جا</p></div>
     <div class="feat-grid">
-      <div class="feat"><div class="ic">🗺</div><h3>انتخاب موقعیت روی نقشه</h3><p>مثل بازی واقعی! اسلات‌مپ زنده هر روم را ببین، تیم و جایگاهت را خودت انتخاب کن و رزروش کن.</p></div>
-      <div class="feat"><div class="ic">💳</div><h3>پرداخت چندروشه</h3><p>کیف پول داخلی، کارت به کارت یا درگاه آنلاین — هرطور راحت هستی. وضعیت پرداخت لحظه‌ای آپدیت می‌شود.</p></div>
-      <div class="feat"><div class="ic">🤖</div><h3>ربات تلگرام + بله</h3><p>همه‌چیز از داخل ربات هم انجام می‌شود! ثبت‌نام، پرداخت، اطلاع‌رسانی Room ID و جوایز — با یک دیتابیس مشترک با سایت.</p></div>
-      <div class="feat"><div class="ic">🏆</div><h3>جوایز نقدی شفاف</h3><p>جوایز قهرمان‌ها توسط مدیریت تایید و مستقیماً به کیف پول واریز می‌شود. همه‌چیز قابل رهگیری است.</p></div>
+      <div class="feat reveal rv-d1"><div class="ic">🗺</div><h3>انتخاب موقعیت روی نقشه</h3><p>مثل بازی واقعی! اسلات‌مپ زنده هر روم را ببین، تیم و جایگاهت را خودت انتخاب کن و رزروش کن.</p></div>
+      <div class="feat reveal rv-d2"><div class="ic">💳</div><h3>پرداخت چندروشه</h3><p>کیف پول داخلی، کارت به کارت یا درگاه آنلاین — هرطور راحت هستی. وضعیت پرداخت لحظه‌ای آپدیت می‌شود.</p></div>
+      <div class="feat reveal rv-d3"><div class="ic">🤖</div><h3>ربات تلگرام + بله</h3><p>همه‌چیز از داخل ربات هم انجام می‌شود! ثبت‌نام، پرداخت، اطلاع‌رسانی Room ID و جوایز — با یک دیتابیس مشترک با سایت.</p></div>
+      <div class="feat reveal rv-d4"><div class="ic">🏆</div><h3>جوایز نقدی شفاف</h3><p>جوایز قهرمان‌ها توسط مدیریت تایید و مستقیماً به کیف پول واریز می‌شود. همه‌چیز قابل رهگیری است.</p></div>
     </div>
   </section>
   <section class="sec" style="padding-top:10px">
-    <div class="sec-head"><h2>چهار قدم تا <span>میدان</span></h2></div>
+    <div class="sec-head reveal"><h2>چهار قدم تا <span>میدان</span></h2></div>
     <div class="steps">
-      <div class="step"><h3>🪖 حساب بساز</h3><p>با ایمیل و رمز، در کمتر از ۳۰ ثانیه. یا فقط در ربات /start بزن.</p></div>
-      <div class="step"><h3>🎮 روم را انتخاب کن</h3><p>TDM، S&D، بتل رویال و ده‌ها حالت دیگر — روم دلخواهت را پیدا کن.</p></div>
-      <div class="step"><h3>🎯 جایگاهت را بگیر</h3><p>از نقشه اسلات‌ها موقعیتت را انتخاب و ورودی را پرداخت کن.</p></div>
-      <div class="step"><h3>🔓 وارد روم شو</h3><p>Room ID و رمز، لحظه انتشار به تو اطلاع داده می‌شود. موفق باشی!</p></div>
+      <div class="step reveal rv-d1"><h3>🪖 حساب بساز</h3><p>با ایمیل و رمز، در کمتر از ۳۰ ثانیه. یا فقط در ربات /start بزن.</p></div>
+      <div class="step reveal rv-d2"><h3>🎮 روم را انتخاب کن</h3><p>TDM، S&D، بتل رویال و ده‌ها حالت دیگر — روم دلخواهت را پیدا کن.</p></div>
+      <div class="step reveal rv-d3"><h3>🎯 جایگاهت را بگیر</h3><p>از نقشه اسلات‌ها موقعیتت را انتخاب و ورودی را پرداخت کن.</p></div>
+      <div class="step reveal rv-d4"><h3>🔓 وارد روم شو</h3><p>Room ID و رمز، لحظه انتشار به تو اطلاع داده می‌شود. موفق باشی!</p></div>
     </div>
   </section>
-  <div class="cta-box"><div class="cta-in">
+  <div class="cta-box reveal"><div class="cta-in">
     <h2>آماده‌ای قهرمان بشی؟ 🔥</h2>
     <p>همین الان اولین رومت را رزرو کن — جایگاه‌ها محدودند!</p>
     <button class="btn lg" onclick="location.hash='#/rooms'">🎯 مشاهده روم‌های باز</button>
   </div></div>`;
+  Reveal.arm(); armStats();
 }
 
 /* ─────────── لیست روم‌ها ─────────── */
@@ -249,7 +284,7 @@ const RF = { status: 'open', mode: 'all' };
 async function viewRooms() {
   $('#app').innerHTML = `
   <section class="sec" style="padding-top:38px">
-    <div class="sec-head"><h2>🎮 <span>روم‌های نبرد</span></h2><p>روم دلخواهت را انتخاب کن و جایگاهت را رزرو کن</p></div>
+    <div class="sec-head reveal"><h2>🎮 <span>روم‌های نبرد</span></h2><p>روم دلخواهت را انتخاب کن و جایگاهت را رزرو کن</p></div>
     <div class="filters" id="rfilters"></div>
     <div class="rooms-grid" id="roomsGrid"><div class="empty" style="grid-column:1/-1;padding:40px">⏳ در حال بارگذاری...</div></div>
   </section>`;
@@ -269,8 +304,9 @@ async function loadRooms() {
   if (!g) return;
   try {
     const r = await api(`/api/rooms?status=${RF.status}&mode=${RF.mode}`);
-    if (!(r.rooms || []).length) { g.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="big">🕹</div><h3>رومی با این فیلترها پیدا نشد</h3><p class="mut">فیلترها را عوض کن یا بعداً سر بزن</p></div>`; return; }
-    g.innerHTML = r.rooms.map(roomCard).join('');
+    if (!(r.rooms || []).length) { g.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="big">🕹</div><h3>رومی با این فیلترها پیدا نشد</h3><p class="mut">فیلترها را عوض کن یا بعداً سر بزن</p></div>`; Reveal.arm(); return; }
+    g.innerHTML = r.rooms.map((rm, i) => roomCard(rm).replace('class="room-card"', `class="room-card reveal rv-d${(i % 5) + 1}"`)).join('');
+    Reveal.arm();
   } catch (e) { g.innerHTML = `<div class="empty" style="grid-column:1/-1">⚠️ خطا در دریافت روم‌ها</div>`; }
 }
 function roomCard(rm) {
@@ -335,7 +371,7 @@ async function viewRoom(id) {
   app.innerHTML = `
   <div class="roomwrap">
     <div class="crumb" onclick="location.hash='#/rooms'">« بازگشت به روم‌ها</div>
-    <div class="room-hero">
+    <div class="room-hero reveal">
       <div class="info">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <div class="room-mode" style="width:56px;height:56px;font-size:27px">${m.emoji}</div>
@@ -359,14 +395,14 @@ async function viewRoom(id) {
     ${rm.rules ? `<div class="roomdesc">📜 <b>قوانین:</b> ${esc(rm.rules)}</div>` : ''}
     ${codemap}
     ${mySlot ? `<div class="roomdesc" style="border-color:rgba(255,159,26,.5)">🎯 <b>جایگاه تو:</b> ${esc(mySlot.team_label)} / شماره ${fa(mySlot.slot_no)} — ${mySlot.status === 'paid' ? '✅ قطعی شد' : '⏳ در انتظار تایید پرداخت'} ${rm.status === 'open' ? `<button class="btn sm bad" style="margin-inline-start:10px" onclick="leaveRoom(${rm.id})">↩️ انصراف</button>` : ''}</div>` : ''}
-    <div class="slots-title"><h2>🎯 نقشه موقعیت‌ها</h2><span class="hint">🟢 آزاد — ⏳ در انتظار پرداخت — 🔒 قطعی</span></div>
+    <div class="slots-title reveal"><h2>🎯 نقشه موقعیت‌ها</h2><span class="hint">🟢 آزاد — ⏳ در انتظار پرداخت — 🔒 قطعی</span></div>
     ${Object.keys(teams).map((tl) => `
       <div class="team-sec">
         <div class="team-lbl">🪖 ${esc(tl)}</div>
-        <div class="slotrow">${teams[tl].map((s) => {
+        <div class="slotrow">${teams[tl].map((s, si) => {
           const isMine = S.me && s.user_id === S.me.id;
           const who = s.status === 'free' ? 'آزاد' : (isMine ? 'تو!' : (s.status === 'pending' ? 'رزرو موقت' : esc(s.display_name || s.username || 'بازیکن')));
-          return `<div class="slot ${s.status} ${isMine ? 'mine' : ''}" onclick="slotClick(${s.slot_no},'${s.status}',${isMine},${rm.status === 'open' ? 1 : 0})">
+          return `<div class="slot ${s.status} ${isMine ? 'mine' : ''}" style="--si:${si}" onclick="slotClick(${s.slot_no},'${s.status}',${isMine},${rm.status === 'open' ? 1 : 0})">
             <div class="no">${fa(s.slot_no)}</div><div class="who">${who}</div></div>`;
         }).join('')}</div>
       </div>`).join('')}
@@ -378,6 +414,7 @@ async function viewRoom(id) {
     </div>
     ${adminBar}
   </div>`;
+  Reveal.arm();
 }
 window.slotClick = (no, status, isMine, canJoin) => {
   if (!S.me) return authModal('login');
@@ -670,7 +707,7 @@ async function loadAdm() {
       const r = await api('/api/payments?status=all&kind=all');
       b.innerHTML = `<div class="tblwrap"><table class="tbl"><thead><tr><th>#</th><th>نوع</th><th>کاربر</th><th>روم</th><th>مبلغ</th><th>روش</th><th>کد پیگیری</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>
       ${(r.payments || []).map((x) => `<tr><td>${fa(x.id)}</td><td>${PAY_KIND[x.kind] || x.kind}</td><td>${esc(x.display_name || x.username || '—')}</td><td>${esc(x.room_title || '—')}</td>
-        <td><b>${money(x.amount)}</b></td><td>${PAY_METHOD[x.method] || x.method}</td><td class="ltr">${esc(x.ref_code || '—')}</td>
+        <td><b>${money(x.amount)}</b></td><td>${PAY_METHOD[x.method] || x.method}</td><td class="ltr">${x.proof_file_id ? '<span class="proofbadge" title="عکس رسید در ربات ارسال شده">📸</span> ' : ''}${esc(x.ref_code || '—')}</td>
         <td><span class="tag ${x.status}">${x.status === 'pending' ? '⏳ در انتظار' : x.status === 'approved' ? '✅ تایید' : '❌ رد'}</span></td>
         <td>${x.status === 'pending' ? `<button class="btn sm good" onclick="payAct(${x.id},'approve')">✅</button> <button class="btn sm bad" onclick="payAct(${x.id},'reject')">❌</button>` : '—'}</td></tr>`).join('') || '<tr><td colspan="9" class="mut" style="text-align:center;padding:30px">پرداختی ثبت نشده</td></tr>'}
       </tbody></table></div>`;
@@ -805,16 +842,17 @@ window.editRoomModal = async (id) => {
 function roomFormModal(rm) {
   rm = rm || {};
   modal(`<h3>${rm.id ? '✏️ ویرایش روم' : '➕ ساخت روم جدید'}</h3>
-    <p class="msub">چیدمان = تعداد تیم‌ها × تعداد بازیکن در هر تیم (مثال: ۲×۴ = ۸ نفره)</p>
+    <p class="msub">چیدمان = تعداد تیم‌ها × تعداد بازیکن در هر تیم (مثال: ۲۵ تیم دو نفره = ۵۰ نفره)</p>
     <div class="field"><label>📝 عنوان روم *</label><input id="nrT" value="${esc(rm.title || '')}" placeholder="مثال: جام قهرمانان شبانه"></div>
     <div class="frow">
       <div class="field"><label>🎮 حالت بازی</label><select id="nrM">${Object.keys(MODES).map((k) => `<option value="${k}" ${rm.mode === k ? 'selected' : ''}>${MODES[k].emoji} ${MODES[k].fa}</option>`).join('')}</select></div>
       <div class="field"><label>🗺 نقشه</label><input id="nrMap" value="${esc(rm.map_name || '')}" placeholder="مثال: Ismail"></div>
     </div>
     <div class="frow">
-      <div class="field"><label>👥 تعداد تیم‌ها</label><input id="nrTeams" type="number" min="2" max="10" value="${rm.teams || 2}"></div>
-      <div class="field"><label>👤 بازیکن در هر تیم</label><input id="nrSize" type="number" min="1" max="20" value="${rm.team_size || 4}"></div>
+      <div class="field"><label>👥 تعداد تیم‌ها (تا ۵۰)</label><input id="nrTeams" type="number" min="2" max="50" value="${rm.teams || 2}" oninput="updLayoutHint()"></div>
+      <div class="field"><label>👤 بازیکن در هر تیم (تا ۲۰)</label><input id="nrSize" type="number" min="1" max="20" value="${rm.team_size || 4}" oninput="updLayoutHint()"></div>
     </div>
+    <div id="layoutHint" class="layout-hint"></div>
     <div class="frow">
       <div class="field"><label>💰 ورودی (تومان)</label><input id="nrFee" type="number" min="0" value="${rm.entry_fee || 0}"></div>
       <div class="field"><label>🏆 جایزه کل (تومان)</label><input id="nrPrize" type="number" min="0" value="${rm.prize_pool || 0}"></div>
@@ -826,6 +864,19 @@ function roomFormModal(rm) {
     <div id="nrErr"></div>
     <button class="btn blk lg" onclick="saveRoom(${rm.id || 0})">${rm.id ? '💾 ذخیره تغییرات' : '🚀 ساخت روم'}</button>`, true);
 }
+window.updLayoutHint = () => {
+  const el = $('#layoutHint');
+  if (!el || !$('#nrTeams')) return;
+  const t = parseInt($('#nrTeams').value, 10) || 0;
+  const s = parseInt($('#nrSize').value, 10) || 0;
+  const total = t * s;
+  let msg = `${fa(t)} تیم × ${fa(s)} نفر = <b>${fa(total)} بازیکن</b>`, cls = 'ok';
+  if (t < 2 || t > 50) { msg = 'تعداد تیم‌ها باید بین ۲ تا ۵۰ باشد'; cls = 'err'; }
+  else if (s < 1 || s > 20) { msg = 'بازیکن در هر تیم باید بین ۱ تا ۲۰ باشد'; cls = 'err'; }
+  else if (total > 250) { msg = `حداکثر ظرفیت هر روم ۲۵۰ بازیکن است (الان ${fa(total)})`; cls = 'err'; }
+  el.innerHTML = msg;
+  el.className = 'layout-hint ' + cls;
+};
 window.saveRoom = async (id) => {
   const b = {
     title: $('#nrT').value.trim(), mode: $('#nrM').value, map_name: $('#nrMap').value.trim(),

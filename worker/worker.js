@@ -68,7 +68,7 @@ const SCHEMA_SQL = [
   "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password_hash TEXT, display_name TEXT, telegram_id TEXT UNIQUE, bale_id TEXT UNIQUE, role TEXT DEFAULT 'user', wallet REAL DEFAULT 0, codm_id TEXT, banned INTEGER DEFAULT 0, lang TEXT DEFAULT 'fa', created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS rooms (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, mode TEXT DEFAULT 'tdm', map_name TEXT, teams INTEGER DEFAULT 2, team_size INTEGER DEFAULT 4, max_players INTEGER DEFAULT 8, entry_fee REAL DEFAULT 0, prize_pool REAL DEFAULT 0, start_time TEXT, status TEXT DEFAULT 'open', room_id TEXT, room_pass TEXT, description TEXT, rules TEXT, created_by INTEGER, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS slots (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER NOT NULL, slot_no INTEGER NOT NULL, team_label TEXT, user_id INTEGER, status TEXT DEFAULT 'free', payment_id INTEGER, UNIQUE(room_id, slot_no))",
-  "CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, room_id INTEGER, slot_id INTEGER, amount REAL NOT NULL, method TEXT DEFAULT 'card', ref_code TEXT, status TEXT DEFAULT 'pending', kind TEXT DEFAULT 'entry', created_at TEXT DEFAULT (datetime('now')), handled_by INTEGER, handled_at TEXT)",
+  "CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, room_id INTEGER, slot_id INTEGER, amount REAL NOT NULL, method TEXT DEFAULT 'card', ref_code TEXT, proof_file_id TEXT, proof_platform TEXT, status TEXT DEFAULT 'pending', kind TEXT DEFAULT 'entry', created_at TEXT DEFAULT (datetime('now')), handled_by INTEGER, handled_at TEXT)",
   "CREATE TABLE IF NOT EXISTS prizes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, room_id INTEGER, amount REAL NOT NULL, note TEXT, status TEXT DEFAULT 'pending', created_by INTEGER, created_at TEXT DEFAULT (datetime('now')), handled_at TEXT)",
   "CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, amount REAL NOT NULL, kind TEXT, ref TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)",
@@ -84,9 +84,18 @@ const SCHEMA_SQL = [
   "INSERT OR IGNORE INTO settings (key, value) VALUES ('min_topup','50000'),('welcome','به بزرگترین پلتفرم مدیریت روم‌های کالاف دیوتی موبایل خوش آمدید! 🪖'),('bank_name',''),('card_number',''),('card_name',''),('gateway_url',''),('channel_link','https://t.me/offerspishnahadat_shop_bot'),('support_bot','https://t.me/offerspishnahadat_feedbackbot'),('website_url',''),('offers_site','https://offers-pishnahadat.vercel.app'),('offers_page','https://zaya.io/Offers_pishnahadat'),('shop_bot','https://t.me/offerspishnahadat_shop_bot')"
 ];
 let INIT_P = null;
+/* مهاجرت‌های سبک — برای دیتابیس‌های موجود؛ خطای «ستون تکراری» بی‌صدا رد می‌شود */
+async function migrateDB(db) {
+  const cols = [
+    'ALTER TABLE payments ADD COLUMN proof_file_id TEXT',
+    'ALTER TABLE payments ADD COLUMN proof_platform TEXT'
+  ];
+  for (const c of cols) { try { await db.prepare(c).run(); } catch (e) {} }
+}
 function initDB(db) {
   if (!INIT_P) INIT_P = (async () => {
     await db.batch(SCHEMA_SQL.map(s => db.prepare(s)));
+    await migrateDB(db);
     const r = await db.prepare('SELECT value FROM settings WHERE key=?1').bind('wh_secret').first();
     if (!r) await db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('wh_secret',?1)").bind(rid(24)).run();
   })().catch(e => { INIT_P = null; throw e; });
@@ -135,6 +144,11 @@ async function sendBot(base, token, chatId, text, kb) {
   if (kb) p.reply_markup = { inline_keyboard: kb };
   return botCall(base, token, 'sendMessage', p);
 }
+async function sendBotPhoto(base, token, chatId, fileId, caption, kb) {
+  const p = { chat_id: chatId, photo: fileId, caption: String(caption || '').slice(0, 1000), parse_mode: 'HTML' };
+  if (kb) p.reply_markup = { inline_keyboard: kb };
+  return botCall(base, token, 'sendPhoto', p);
+}
 async function editBot(base, token, chatId, msgId, text, kb) {
   const p = { chat_id: chatId, message_id: msgId, text, parse_mode: 'HTML', disable_web_page_preview: true };
   if (kb) p.reply_markup = { inline_keyboard: kb };
@@ -158,6 +172,37 @@ async function notifyAdmins(db, env, text) {
     for (const row of (r.results || [])) notifyUser(db, env, row.id, text);
   } catch (e) {}
 }
+/* اطلاع‌رسانی عکس رسید به ادمین‌ها: عکس روی پلتفرم مبدا (با دکمه تایید/رد) + متن جایگزین برای بقیه */
+async function notifyProofAdmins(db, env, payId, headerText) {
+  try {
+    const pay = await db.prepare('SELECT * FROM payments WHERE id=?1').bind(payId).first();
+    if (!pay) return;
+    const st = await getSettings(db);
+    const admins = await db.prepare("SELECT id, telegram_id, bale_id FROM users WHERE role='admin' AND banned=0").all();
+    const cap = `${headerText}\n🧾 کد پیگیری: ${pay.ref_code ? '<code>' + esc(pay.ref_code) + '</code>' : '— (اختیاری)'}\n👇 رسید را بررسی کن:`;
+    const kb = [[{ text: '✅ تایید پرداخت', callback_data: `adm:ok:${pay.id}` }, { text: '❌ رد', callback_data: `adm:no:${pay.id}` }]];
+    for (const a of (admins.results || [])) {
+      const srcId = pay.proof_platform === 'tg' ? a.telegram_id : a.bale_id;
+      if (pay.proof_file_id && srcId) {
+        keep(sendBotPhoto(pay.proof_platform === 'tg' ? TG_BASE : BL_BASE, pay.proof_platform === 'tg' ? tgToken(env, st) : baleToken(env, st), srcId, pay.proof_file_id, cap, kb).catch(() => {}));
+      } else {
+        const where = pay.proof_file_id ? `\n📸 عکس رسید در ربات ${pay.proof_platform === 'tg' ? 'تلگرام' : 'بله'} ثبت شده است — از همان ربات بررسی کن.` : '\n⚠️ این پرداخت هنوز عکس رسید ندارد.';
+        notifyUser(db, env, a.id, `${headerText}${where}`);
+      }
+    }
+  } catch (e) {}
+}
+/* متن کوتاه فقط برای ادمین‌های یک پلتفرم مشخص */
+async function notifyPlatformAdmins(db, env, platform, text) {
+  try {
+    const st = await getSettings(db);
+    const admins = await db.prepare("SELECT id, telegram_id, bale_id FROM users WHERE role='admin' AND banned=0").all();
+    for (const a of (admins.results || [])) {
+      const cid = platform === 'tg' ? a.telegram_id : a.bale_id;
+      if (cid) keep(sendBot(platform === 'tg' ? TG_BASE : BL_BASE, platform === 'tg' ? tgToken(env, st) : baleToken(env, st), cid, text).catch(() => {}));
+    }
+  } catch (e) {}
+}
 
 /* ─────────────── احراز هویت ─────────────── */
 async function authUser(db, req) {
@@ -178,10 +223,21 @@ async function roomCounts(db, roomId) {
   const r = await db.prepare("SELECT COUNT(*) t, SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) p, SUM(CASE WHEN status='free' THEN 1 ELSE 0 END) f FROM slots WHERE room_id=?1").bind(roomId).first();
   return { total: num(r && r.t), paid: num(r && r.p), free: num(r && r.f) };
 }
+/* محدودیت‌های چیدمان روم — تا ۵۰ تیم × ۲۰ نفر (سقف کل ۲۵۰ اسلات در هر روم) */
+const MAX_TEAMS = 50, MAX_SIZE = 20, MAX_SLOTS = 250;
+function clampTeams(v, def) { let n = Math.floor(num(v)); if (!n) n = def || 2; return Math.min(MAX_TEAMS, Math.max(2, n)); }
+function clampSize(v, def) { let n = Math.floor(num(v)); if (!n) n = def || 4; return Math.min(MAX_SIZE, Math.max(1, n)); }
+function layoutError(teams, size) {
+  if (!Number.isInteger(teams) || teams < 2 || teams > MAX_TEAMS) return `تعداد تیم‌ها باید عددی بین ۲ تا ${faNum(MAX_TEAMS)} باشد`;
+  if (!Number.isInteger(size) || size < 1 || size > MAX_SIZE) return `بازیکن در هر تیم باید عددی بین ۱ تا ${faNum(MAX_SIZE)} باشد`;
+  if (teams * size > MAX_SLOTS) return `حداکثر ظرفیت هر روم ${faNum(MAX_SLOTS)} بازیکن است (تعداد تیم‌ها × اعضا = ${faNum(teams * size)})`;
+  return '';
+}
+async function batchChunks(db, stmts, per = 80) { for (let i = 0; i < stmts.length; i += per) await db.batch(stmts.slice(i, i + per)); }
 async function createRoom(db, env, f, adminId) {
   const mode = MODES[f.mode] ? f.mode : 'custom';
-  const teams = Math.min(10, Math.max(2, num(f.teams) || MODES[mode].def_teams));
-  const size = Math.min(20, Math.max(1, num(f.team_size) || MODES[mode].def_size));
+  const teams = clampTeams(f.teams, MODES[mode].def_teams);
+  const size = clampSize(f.team_size, MODES[mode].def_size);
   const maxp = teams * size;
   const rr = await db.prepare(`INSERT INTO rooms (title,mode,map_name,teams,team_size,max_players,entry_fee,prize_pool,start_time,description,rules,created_by,status)
     VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'open')`)
@@ -191,9 +247,9 @@ async function createRoom(db, env, f, adminId) {
   const roomId = rr.meta.last_row_id;
   const stmts = [];
   for (let t = 0; t < teams; t++) for (let s = 1; s <= size; s++) {
-    stmts.push(db.prepare('INSERT INTO slots (room_id,slot_no,team_label) VALUES(?1,?2,?3)').bind(roomId, t * size + s, TEAM_NAMES[t] || ('تیم ' + (t + 1))));
+    stmts.push(db.prepare('INSERT INTO slots (room_id,slot_no,team_label) VALUES(?1,?2,?3)').bind(roomId, t * size + s, TEAM_NAMES[t] || ('تیم ' + faNum(t + 1))));
   }
-  await db.batch(stmts);
+  await batchChunks(db, stmts);
   return roomId;
 }
 async function roomText(db, env, roomId, viewer) {
@@ -411,6 +467,8 @@ async function apiRoomCreate(db, env, req) {
   if (!u || u.role !== 'admin') return j({ ok: false, error: 'دسترسی ادمین لازم است' }, 403);
   const b = await body(req);
   if (!b.title || !String(b.title).trim()) return j({ ok: false, error: 'عنوان روم الزامی است' }, 400);
+  const lerr = layoutError(Math.floor(num(b.teams) || 2), Math.floor(num(b.team_size) || 4));
+  if (lerr) return j({ ok: false, error: lerr }, 400);
   const id = await createRoom(db, null, b, u.id);
   announceNewRoom(db, env, id);
   return j({ ok: true, id });
@@ -419,6 +477,13 @@ async function apiRoomUpdate(db, req, id) {
   const u = await authUser(db, req);
   if (!u || u.role !== 'admin') return j({ ok: false, error: 'دسترسی ادمین لازم است' }, 403);
   const b = await body(req);
+  if (b.teams !== undefined || b.team_size !== undefined) {
+    const cur0 = await db.prepare('SELECT teams, team_size FROM rooms WHERE id=?1').bind(id).first();
+    const nt = b.teams !== undefined ? Math.floor(num(b.teams)) : num(cur0 && cur0.teams);
+    const ns = b.team_size !== undefined ? Math.floor(num(b.team_size)) : num(cur0 && cur0.team_size);
+    const lerr = layoutError(nt, ns);
+    if (lerr) return j({ ok: false, error: lerr }, 400);
+  }
   if (b.reset_slots) {
     const cur = await db.prepare('SELECT * FROM rooms WHERE id=?1').bind(id).first();
     if (cur && cur.status === 'open') {
@@ -437,12 +502,12 @@ async function apiRoomUpdate(db, req, id) {
   if (b.reset_slots) {
     const cur = await db.prepare('SELECT * FROM rooms WHERE id=?1').bind(id).first();
     if (cur) {
-      const teams = Math.min(10, Math.max(2, num(cur.teams)));
-      const size = Math.min(20, Math.max(1, num(cur.team_size)));
+      const teams = clampTeams(cur.teams, 2);
+      const size = clampSize(cur.team_size, 4);
       await db.prepare('UPDATE rooms SET max_players=?2 WHERE id=?1').bind(id, teams * size).run();
       const stmts = [];
-      for (let t = 0; t < teams; t++) for (let s = 1; s <= size; s++) stmts.push(db.prepare('INSERT INTO slots (room_id,slot_no,team_label) VALUES(?1,?2,?3)').bind(id, t * size + s, TEAM_NAMES[t] || ('تیم ' + (t + 1))));
-      await db.batch(stmts);
+      for (let t = 0; t < teams; t++) for (let s = 1; s <= size; s++) stmts.push(db.prepare('INSERT INTO slots (room_id,slot_no,team_label) VALUES(?1,?2,?3)').bind(id, t * size + s, TEAM_NAMES[t] || ('تیم ' + faNum(t + 1))));
+      await batchChunks(db, stmts);
     }
   }
   return j({ ok: true });
@@ -815,7 +880,7 @@ const HELP_TEXT = `🪖 <b>راهنمای کامل CODM Rooms</b>
 ۴. بعد از تایید پرداخت، جایگاهت قطعی می‌شود
 
 💰 <b>شارژ کیف پول:</b>
-مبلغ را انتخاب کن، پرداخت کن و کد پیگیری را بفرست. بعد از تایید مدیریت، کیف پولت شارژ می‌شود.
+مبلغ را انتخاب کن، پرداخت کن و عکس رسید را بفرست (کد پیگیری اختیاری است). بعد از تایید مدیریت، کیف پولت شارژ می‌شود.
 
 👤 <b>حساب من:</b>
 مشاهده موجودی، روم‌های ثبت‌نام‌شده، لغو ثبت‌نام (قبل از شروع)، اتصال به سایت و تنظیم رمز سایت.
@@ -1109,8 +1174,9 @@ async function admPaysList(db, env, p, chatId, msgId) {
   if (!list.length) t += 'همه پرداخت‌ها بررسی شده‌اند. ✅\n';
   for (const x of list) {
     const isTop = x.kind === 'topup';
-    t += `#${faNum(x.id)} | ${isTop ? '💰 شارژ' : '🎮 ' + esc(x.room_title || '')} | ${esc(x.display_name || x.username)} | ${money(x.amount)} ت | ${x.method === 'card' ? '💳' : (x.method === 'online' ? '🏦' : '💼')}${x.ref_code ? ' | 🧾 ' + esc(x.ref_code) : ''}\n`;
-    kb.push([{ text: `✅ #${x.id}`, callback_data: `adm:ok:${x.id}` }, { text: `❌ #${x.id}`, callback_data: `adm:no:${x.id}` }]);
+    t += `#${faNum(x.id)} | ${isTop ? '💰 شارژ' : '🎮 ' + esc(x.room_title || '')} | ${esc(x.display_name || x.username)} | ${money(x.amount)} ت | ${x.method === 'card' ? '💳' : (x.method === 'online' ? '🏦' : '💼')}${x.ref_code ? ' | 🧾 ' + esc(x.ref_code) : ''}${x.proof_file_id ? ' | 📸 عکس' : ' | ⚠️ بدون عکس'}\n`;
+    if (x.proof_file_id) kb.push([{ text: `✅ #${x.id}`, callback_data: `adm:ok:${x.id}` }, { text: `❌ #${x.id}`, callback_data: `adm:no:${x.id}` }, { text: '📸 دیدن رسید', callback_data: `adm:pr:${x.id}` }]);
+    else kb.push([{ text: `✅ #${x.id}`, callback_data: `adm:ok:${x.id}` }, { text: `❌ #${x.id}`, callback_data: `adm:no:${x.id}` }]);
   }
   kb.push([{ text: '🔙 پنل', callback_data: 'adm' }]);
   await editOrSend(db, env, p, chatId, msgId, t, kb);
@@ -1246,9 +1312,9 @@ async function cbDispatch(db, env, p, cb, ans, st0) {
     const kb = [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${ridS}` }]];
     if (act === 'jc') {
       const c = r.card || {};
-      var t = `💳 <b>پرداخت کارت به کارت</b>\n━━━━━━━━━━━━━━━━━━\n🏦 بانک: ${esc(c.bank) || '—'}\n🔢 شماره کارت:\n<code>${esc(c.number)}</code>\n👤 به نام: ${esc(c.name) || '—'}\n💰 مبلغ: <b>${money(r.fee)} تومان</b>\n\n⚠️ مبلغ را دقیقاً ${money(r.fee)} تومان واریز کن.\n🧾 بعد از واریز، <b>کد پیگیری تراکنش</b> را بفرست:`;
+      var t = `💳 <b>پرداخت کارت به کارت</b>\n━━━━━━━━━━━━━━━━━━\n🏦 بانک: ${esc(c.bank) || '—'}\n🔢 شماره کارت:\n<code>${esc(c.number)}</code>\n👤 به نام: ${esc(c.name) || '—'}\n💰 مبلغ: <b>${money(r.fee)} تومان</b>\n\n⚠️ مبلغ را دقیقاً ${money(r.fee)} تومان واریز کن.\n📸 سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی).\n🧾 کد پیگیری اختیاری است — می‌توانی در کپشن عکس بنویسی.`;
     } else {
-      var t = `🏦 <b>پرداخت آنلاین</b>\n\nبا دکمه زیر به درگاه برو و مبلغ را پرداخت کن، سپس <b>کد پیگیری</b> را همین‌جا بفرست:`;
+      var t = `🏦 <b>پرداخت آنلاین</b>\n\nبا دکمه زیر به درگاه برو و پرداخت کن، سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی).\n🧾 کد پیگیری اختیاری است — در کپشن عکس یا جداگانه.`;
       kb.unshift([{ text: '🏦 رفتن به درگاه پرداخت', url: r.gateway_url }]);
     }
     return editOrSend(db, env, p, chatId, msgId, t, kb);
@@ -1348,6 +1414,12 @@ async function cbDispatch(db, env, p, cb, ans, st0) {
     await db.batch([db.prepare('DELETE FROM slots WHERE room_id=?1').bind(roomId), db.prepare('DELETE FROM rooms WHERE id=?1').bind(roomId)]);
     return admRoomsList(db, env, p, chatId, msgId);
   }
+  if (data.startsWith('adm:pr:')) {
+    const pay = await db.prepare('SELECT * FROM payments WHERE id=?1').bind(num(data.slice(7))).first();
+    if (!pay || !pay.proof_file_id) return editOrSend(db, env, p, chatId, msgId, '⚠️ عکسی برای این پرداخت ثبت نشده است.', [[{ text: '🔙 پرداخت‌ها', callback_data: 'adm:pays' }]]);
+    if (pay.proof_platform !== p) return editOrSend(db, env, p, chatId, msgId, `⚠️ این رسید در ربات ${pay.proof_platform === 'tg' ? 'تلگرام' : 'بله'} فرستاده شده است. از همان ربات بررسی کن.`, [[{ text: '🔙 پرداخت‌ها', callback_data: 'adm:pays' }]]);
+    return sendBotPhoto(bBase(p), bToken(env, await getSettings(db), p), chatId, pay.proof_file_id, `🧾 رسید پرداخت #${faNum(pay.id)} | ${money(pay.amount)} تومان${pay.ref_code ? '\n🆔 کد پیگیری: ' + esc(pay.ref_code) : ''}`, [[{ text: '✅ تایید', callback_data: `adm:ok:${pay.id}` }, { text: '❌ رد', callback_data: `adm:no:${pay.id}` }]]);
+  }
   if (data.startsWith('adm:ok:')) {
     const r = await approvePayment(db, env, num(data.slice(7)), user.id);
     return editOrSend(db, env, p, chatId, msgId, r.ok ? (r.kind === 'topup' ? '✅ شارژ کیف پول تایید و اعمال شد.' : '✅ پرداخت تایید و جایگاه بازیکن قطعی شد.') : `⚠️ ${r.error}`, [[{ text: '🔙 پرداخت‌ها', callback_data: 'adm:pays' }]]);
@@ -1414,6 +1486,28 @@ async function cbDispatch(db, env, p, cb, ans, st0) {
   }
 }
 
+/* ثبت عکس رسید پرداخت (الزامی) — کد پیگیری از کپشن عکس اختیاری است */
+async function handlePayProof(db, env, p, chatId, user, s, msg) {
+  const T = bToken(env, await getSettings(db), p);
+  const fileId = msg.photo[msg.photo.length - 1].file_id;
+  const cap = String(msg.caption || '').trim().slice(0, 60);
+  let pid = num(s.data.payment_id);
+  if (!pid && s.flow === 'topref') {
+    /* شارژ کیف پول: پرداخت هنوز ساخته نشده — با عکس رسید ساخته می‌شود */
+    const pr = await db.prepare("INSERT INTO payments (user_id,amount,method,ref_code,proof_file_id,proof_platform,status,kind) VALUES(?1,?2,?3,?4,?5,?6,'pending','topup')").bind(user.id, num(s.data.amount), s.data.method || 'card', cap, fileId, p).run();
+    pid = pr.meta.last_row_id;
+  } else {
+    await db.prepare("UPDATE payments SET proof_file_id=?2, proof_platform=?3, ref_code=CASE WHEN ?4<>'' THEN ?4 ELSE ref_code END WHERE id=?1 AND status='pending'").bind(pid, fileId, p, cap).run();
+  }
+  const pay = await db.prepare('SELECT * FROM payments WHERE id=?1').bind(pid).first();
+  if (!pay) { await setBState(db, p, chatId, null); return sendBot(bBase(p), T, chatId, '⚠️ پرداخت یافت نشد. دوباره از بخش پرداخت شروع کن.', mainKb(user, user.role === 'admin')); }
+  s.data.payment_id = pid; s.data.proof = true;
+  await setBState(db, p, chatId, s);
+  const kind = pay.kind === 'topup' ? 'شارژ کیف پول' : 'ورودی روم';
+  notifyProofAdmins(db, env, pay.id, `📸 <b>رسید ${kind} دریافت شد</b>\n\n#${faNum(pay.id)} | ${money(pay.amount)} تومان\n👤 ${esc(user.display_name || user.username)}`);
+  return sendBot(bBase(p), T, chatId, `✅ <b>عکس رسید ثبت شد و برای مدیریت ارسال گردید.</b>\n\n⏳ پس از بررسی، نتیجه به شما اعلام می‌شود.\n🧾 کد پیگیری اختیاری است — اگر کد تراکنش را داری همین‌جا بفرست تا ثبت شود، یا /skip را بزن.`, s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }]] : [[{ text: '👤 حساب من', callback_data: 'm:acc' }]]);
+}
+
 /* ─────────────── هندلر پیام‌های متنی ربات ─────────────── */
 async function handleBotMessage(db, env, p, msg) {
   if (!msg || !msg.from || msg.from.is_bot) return;
@@ -1447,6 +1541,11 @@ async function handleBotMessage(db, env, p, msg) {
   /* ماشین حالت */
   const s = await getBState(db, p, chatId);
   const T = bToken(env, await getSettings(db), p);
+  /* پیام‌های عکسی — ثبت عکس رسید (الزامی) */
+  if (msg.photo && msg.photo.length) {
+    if (s && (s.flow === 'receipt' || s.flow === 'topref')) return handlePayProof(db, env, p, chatId, user, s, msg);
+    return sendBot(bBase(p), T, chatId, '📸 برای ثبت عکس رسید، اول پرداخت را شروع کن (ورودی روم یا شارژ کیف پول) و بعد عکس را بفرست.');
+  }
   if (!s) {
     return sendBot(bBase(p), T, chatId, '👇 از منوی زیر استفاده کن:', mainKb(user, isAdmin));
   }
@@ -1456,15 +1555,28 @@ async function handleBotMessage(db, env, p, msg) {
     await setBState(db, p, chatId, null);
     return sendBot(bBase(p), T, chatId, `✅ رمز سایت تنظیم شد!\n\n🌐 ورود به سایت:\n📛 نام کاربری: <code>${esc(user.username)}</code>\n🔑 رمز: همان که فرستادی`, mainKb(user, isAdmin));
   }
-  if (s.flow === 'receipt') {
-    await db.prepare('UPDATE payments SET ref_code=?2 WHERE id=?1 AND status=\'pending\'').bind(num(s.data.payment_id), text.slice(0, 60)).run();
-    const pay = await db.prepare('SELECT * FROM payments WHERE id=?1').bind(num(s.data.payment_id)).first();
-    await setBState(db, p, chatId, null);
-    if (pay) {
-      notifyAdmins(db, env, `🧾 <b>رسید پرداخت ثبت شد</b>\n\n#${faNum(pay.id)} | ${pay.kind === 'topup' ? '💰 شارژ' : '🎮 ورودی روم'} | ${money(pay.amount)} ت\n🆔 کد پیگیری: <code>${esc(text.slice(0, 60))}</code>\n\nاز پنل مدیریت تایید کنید.`);
-      return sendBot(bBase(p), T, chatId, `✅ کد پیگیری ثبت شد و برای مدیریت ارسال گردید.\n⏳ پس از تایید، نتیجه به شما اطلاع داده می‌شود.`, [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }]]);
+  if (s.flow === 'receipt' || s.flow === 'topref') {
+    let pid = num(s.data.payment_id);
+    /* شارژ کیف پول: اگر هنوز پرداخت ساخته نشده، با اولین پیام ساخته می‌شود */
+    if (!pid && s.flow === 'topref') {
+      const pr = await db.prepare("INSERT INTO payments (user_id,amount,method,ref_code,status,kind) VALUES(?1,?2,?3,?4,'pending','topup')").bind(user.id, num(s.data.amount), s.data.method || 'card', '').run();
+      pid = pr.meta.last_row_id; s.data.payment_id = pid;
+      await setBState(db, p, chatId, s);
     }
-    return sendBot(bBase(p), T, chatId, '⚠️ پرداخت یافت نشد.', mainKb(user, isAdmin));
+    const pay = await db.prepare('SELECT * FROM payments WHERE id=?1').bind(pid).first();
+    if (!pay) { await setBState(db, p, chatId, null); return sendBot(bBase(p), T, chatId, '⚠️ پرداخت یافت نشد.', mainKb(user, isAdmin)); }
+    if (text === '/skip' || text === '/cancel') {
+      const done = !!s.data.proof;
+      await setBState(db, p, chatId, null);
+      return sendBot(bBase(p), T, chatId, done ? '✅ رسید شما ثبت شد و در حال بررسی توسط مدیریت است.' : '⚠️ تا وقتی عکس رسید نفرستی، پرداختت بررسی نمی‌شود. هر وقت عکس آماده بود، همین‌جا بفرست.', s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }]] : mainKb(user, isAdmin));
+    }
+    /* کد پیگیری اختیاری است — اما عکس رسید الزامی */
+    await db.prepare("UPDATE payments SET ref_code=?2 WHERE id=?1 AND status='pending'").bind(pid, text.slice(0, 60)).run();
+    if (!s.data.proof) {
+      return sendBot(bBase(p), T, chatId, `🧾 کد پیگیری ثبت شد: <code>${esc(text.slice(0, 60))}</code>\n\n⚠️ <b>ارسال عکس رسید الزامی است!</b>\n📸 لطفاً عکس رسید واریز را همین‌جا بفرست (می‌توانی کد پیگیری را در کپشن عکس هم بنویسی).`);
+    }
+    notifyPlatformAdmins(db, env, pay.proof_platform || p, `🧾 کد پیگیری پرداخت #${faNum(pay.id)} بروزرسانی شد: <code>${esc(text.slice(0, 60))}</code>`);
+    return sendBot(bBase(p), T, chatId, `✅ کد پیگیری بروزرسانی شد: <code>${esc(text.slice(0, 60))}</code>\n⏳ رسید شما در حال بررسی است.`, s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }]] : mainKb(user, isAdmin));
   }
   if (s.flow === 'topamount') {
     const amount = num(numFa(text).replace(/[,،]/g, ''));
@@ -1474,21 +1586,15 @@ async function handleBotMessage(db, env, p, msg) {
     s.flow = 'topref'; s.data.amount = amount;
     await setBState(db, p, chatId, s);
     if (s.data.method === 'card') {
-      return sendBot(bBase(p), T, chatId, `💳 <b>پرداخت کارت به کارت</b>\n━━━━━━━━━━━━━━━━━━\n🏦 بانک: ${esc(stg(st, 'bank_name', '')) || '—'}\n🔢 شماره کارت:\n<code>${esc(stg(st, 'card_number', ''))}</code>\n👤 به نام: ${esc(stg(st, 'card_name', '')) || '—'}\n💰 مبلغ: <b>${money(amount)} تومان</b>\n\n🧾 پس از واریز، کد پیگیری را بفرست:`, [[{ text: '❌ لغو', callback_data: 'm:top' }]]);
+      return sendBot(bBase(p), T, chatId, `💳 <b>پرداخت کارت به کارت</b>\n━━━━━━━━━━━━━━━━━━\n🏦 بانک: ${esc(stg(st, 'bank_name', '')) || '—'}\n🔢 شماره کارت:\n<code>${esc(stg(st, 'card_number', ''))}</code>\n👤 به نام: ${esc(stg(st, 'card_name', '')) || '—'}\n💰 مبلغ: <b>${money(amount)} تومان</b>\n\n⚠️ مبلغ را دقیقاً ${money(amount)} تومان واریز کن.\n📸 سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی).\n🧾 کد پیگیری اختیاری است — می‌توانی در کپشن عکس بنویسی یا جداگانه بفرستی:`, [[{ text: '❌ لغو', callback_data: 'm:top' }]]);
     }
-    return sendBot(bBase(p), T, chatId, `🏦 <b>پرداخت آنلاین</b>\n\nمبلغ: <b>${money(amount)} تومان</b>\nبا دکمه زیر پرداخت کن و سپس کد پیگیری را بفرست:`, [[{ text: '🏦 رفتن به درگاه', url: String(stg(st, 'gateway_url', '')).replace('{amount}', String(amount)).replace('{desc}', encodeURIComponent('Topup')) }], [{ text: '❌ لغو', callback_data: 'm:top' }]]);
-  }
-  if (s.flow === 'topref') {
-    const pr = await db.prepare("INSERT INTO payments (user_id,amount,method,ref_code,status,kind) VALUES(?1,?2,?3,?4,'pending','topup')").bind(user.id, num(s.data.amount), s.data.method, text.slice(0, 60)).run();
-    await setBState(db, p, chatId, null);
-    notifyAdmins(db, env, `🔔 <b>درخواست شارژ کیف پول</b>\n\n👤 ${esc(user.display_name || user.username)}\n💰 مبلغ: ${money(s.data.amount)} تومان\n🧾 کد پیگیری: <code>${esc(text.slice(0, 60))}</code>\n\nاز پنل مدیریت تایید کنید.`);
-    return sendBot(bBase(p), T, chatId, '✅ درخواست شارژ ثبت شد و برای مدیریت ارسال گردید.\n⏳ پس از تایید، کیف پولت شارژ می‌شود.', mainKb(user, isAdmin));
+    return sendBot(bBase(p), T, chatId, `🏦 <b>پرداخت آنلاین</b>\n\nمبلغ: <b>${money(amount)} تومان</b>\nبا دکمه زیر پرداخت کن و سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی):\n🧾 کد پیگیری اختیاری است.`, [[{ text: '🏦 رفتن به درگاه', url: String(stg(st, 'gateway_url', '')).replace('{amount}', String(amount)).replace('{desc}', encodeURIComponent('Topup')) }], [{ text: '❌ لغو', callback_data: 'm:top' }]]);
   }
   if (s.flow === 'nr' && isAdmin) {
     const d = s.data;
     if (s.step === 1) { d.title = text.slice(0, 120); s.step = 2; await setBState(db, p, chatId, s); const kb = []; const keys = Object.keys(MODES); for (let i = 0; i < keys.length; i += 2) kb.push(keys.slice(i, i + 2).map(k => ({ text: `${MODES[k].emoji} ${MODES[k].fa}`, callback_data: `nrmode:${k}` }))); return sendBot(bBase(p), T, chatId, `➕ <b>ساخت روم</b> (۲/۹)\n\n🎮 حالت بازی را انتخاب کن:`, kb); }
-    if (s.step === 3) { const n = num(numFa(text)); if (n < 2 || n > 10) return sendBot(bBase(p), T, chatId, '⚠️ عدد بین ۲ تا ۱۰ بفرست:'); d.teams = n; s.step = 4; await setBState(db, p, chatId, s); return sendBot(bBase(p), T, chatId, `➕ <b>ساخت روم</b> (۴/۹)\n\n👥 تعداد بازیکن در هر تیم را بفرست (عدد)\nمثال: <code>4</code>`, [[{ text: '❌ لغو', callback_data: 'adm' }]]); }
-    if (s.step === 4) { const n = num(numFa(text)); if (n < 1 || n > 20) return sendBot(bBase(p), T, chatId, '⚠️ عدد بین ۱ تا ۲۰ بفرست:'); d.team_size = n; s.step = 5; await setBState(db, p, chatId, s); return sendBot(bBase(p), T, chatId, `➕ <b>ساخت روم</b> (۵/۹)\n\n🗺 نام نقشه را بفرست (مثال: <code>Ismail</code>) یا /skip`, [[{ text: '❌ لغو', callback_data: 'adm' }]]); }
+    if (s.step === 3) { const n = Math.floor(num(numFa(text))); if (n < 2 || n > MAX_TEAMS) return sendBot(bBase(p), T, chatId, `⚠️ عدد بین ۲ تا ${faNum(MAX_TEAMS)} بفرست:`); d.teams = n; s.step = 4; await setBState(db, p, chatId, s); return sendBot(bBase(p), T, chatId, `➕ <b>ساخت روم</b> (۴/۹)\n\n👥 تعداد بازیکن در هر تیم را بفرست (عدد)\nمثال: <code>4</code>\n\n💡 چیدمان فعلی: ${faNum(d.teams)} تیم`, [[{ text: '❌ لغو', callback_data: 'adm' }]]); }
+    if (s.step === 4) { const n = Math.floor(num(numFa(text))); if (n < 1 || n > MAX_SIZE) return sendBot(bBase(p), T, chatId, `⚠️ عدد بین ۱ تا ${faNum(MAX_SIZE)} بفرست:`); const lerr = layoutError(d.teams, n); if (lerr) return sendBot(bBase(p), T, chatId, `⚠️ ${lerr}.\nدوباره بفرست:`); d.team_size = n; s.step = 5; await setBState(db, p, chatId, s); return sendBot(bBase(p), T, chatId, `➕ <b>ساخت روم</b> (۵/۹)\n\n🗺 نام نقشه را بفرست (مثال: <code>Ismail</code>) یا /skip\n\n👥 چیدمان: ${faNum(d.teams)} تیم × ${faNum(n)} نفر = <b>${faNum(d.teams * n)} بازیکن</b>`, [[{ text: '❌ لغو', callback_data: 'adm' }]]); }
     if (s.step === 5) { d.map_name = text === '/skip' ? '' : text.slice(0, 60); s.step = 6; await setBState(db, p, chatId, s); return sendBot(bBase(p), T, chatId, `➕ <b>ساخت روم</b> (۶/۹)\n\n💰 ورودی هر بازیکن به تومان (۰ = رایگان)\nمثال: <code>50000</code>`, [[{ text: '❌ لغو', callback_data: 'adm' }]]); }
     if (s.step === 6) { const n = num(numFa(text).replace(/[,،]/g, '')); if (n < 0) return sendBot(bBase(p), T, chatId, '⚠️ عدد معتبر بفرست:'); d.entry_fee = n; s.step = 7; await setBState(db, p, chatId, s); return sendBot(bBase(p), T, chatId, `➕ <b>ساخت روم</b> (۷/۹)\n\n🏆 جایزه کل به تومان (۰ = بدون جایزه)\nمثال: <code>200000</code>`, [[{ text: '❌ لغو', callback_data: 'adm' }]]); }
     if (s.step === 7) { const n = num(numFa(text).replace(/[,،]/g, '')); if (n < 0) return sendBot(bBase(p), T, chatId, '⚠️ عدد معتبر بفرست:'); d.prize_pool = n; s.step = 8; await setBState(db, p, chatId, s); return sendBot(bBase(p), T, chatId, `➕ <b>ساخت روم</b> (۸/۹)\n\n🕒 زمان شروع را بفرست (مثال: <code>امروز 21:00</code>) یا /skip`, [[{ text: '❌ لغو', callback_data: 'adm' }]]); }

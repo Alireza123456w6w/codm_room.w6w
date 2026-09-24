@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS slots (
 );
 
 -- پرداخت‌ها (ورودی روم / شارژ کیف پول)
+-- proof_file_id/proof_platform: عکس رسید (الزامی در ربات‌ها) — کد پیگیری ref_code اختیاری است
 CREATE TABLE IF NOT EXISTS payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -63,6 +64,8 @@ CREATE TABLE IF NOT EXISTS payments (
   amount REAL NOT NULL,
   method TEXT DEFAULT 'card',
   ref_code TEXT,
+  proof_file_id TEXT,
+  proof_platform TEXT,
   status TEXT DEFAULT 'pending',
   kind TEXT DEFAULT 'entry',
   created_at TEXT DEFAULT (datetime('now')),
