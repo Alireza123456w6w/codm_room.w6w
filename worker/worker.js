@@ -15,7 +15,7 @@
      /setup              →  صفحه اتصال سریع وب‌هوک‌ها
    ══════════════════════════════════════════════════════════════ */
 
-const V = '1.3.0';
+const V = '1.4.0';
 const TG_BASE = 'https://api.telegram.org';
 const BL_BASE = 'https://tapi.bale.ai';
 const FA_D = '۰۱۲۳۴۵۶۷۸۹';
@@ -42,7 +42,7 @@ const MODES = {
 };
 const TEAM_NAMES = ['تیم آ', 'تیم ب', 'تیم ج', 'تیم د', 'تیم هـ', 'تیم و'];
 const ROOM_STATUS = { open: '🟢 باز', full: '🟡 تکمیل ظرفیت', running: '🔴 در حال اجرا', finished: '⚫️ پایان یافت', cancelled: '❌ لغو شد' };
-const SET_KEYS = ['tg_token','bale_token','admin_secret','card_number','card_name','bank_name','gateway_url','channel_link','support_bot','website_url','offers_site','offers_page','shop_bot','min_topup','welcome','announce_channel'];
+const SET_KEYS = ['tg_token','bale_token','admin_secret','card_number','card_name','bank_name','gateway_url','channel_link','support_bot','website_url','offers_site','offers_page','shop_bot','min_topup','welcome','announce_channel','bale_bot_link','tg_bot_link'];
 const BC_BATCH = 20;
 
 /* ─────────────── execution context (waitUntil) ─────────────── */
@@ -130,6 +130,27 @@ async function setSetting(db, k, v) {
 function stg(st, k, def) { const v = st[k]; return (v === undefined || v === null || v === '') ? def : v; }
 function tgToken(env, st) { return (env && env.TELEGRAM_TOKEN) || stg(st, 'tg_token', ''); }
 function baleToken(env, st) { return (env && env.BALE_TOKEN) || stg(st, 'bale_token', ''); }
+
+/* لینک عمومی ربات (درگاه پرداخت سایت) — اولویت: دستیِ ادمین > کش username > getMe */
+async function botPublicLink(db, env, st, platform) {
+  const isBale = platform === 'bale';
+  const manual = stg(st, isBale ? 'bale_bot_link' : 'tg_bot_link', '');
+  if (manual) return manual;
+  const cacheKey = isBale ? 'bale_username' : 'tg_username';
+  const cached = stg(st, cacheKey, '');
+  if (cached) return (isBale ? 'https://ble.ir/' : 'https://t.me/') + cached;
+  const tok = isBale ? baleToken(env, st) : tgToken(env, st);
+  if (!tok) return '';
+  try {
+    const r = await botCall(isBale ? BL_BASE : TG_BASE, tok, 'getMe', {});
+    const un = r && r.ok && r.result && r.result.username;
+    if (un) {
+      keep(setSetting(db, cacheKey, un).catch(() => {}));
+      return (isBale ? 'https://ble.ir/' : 'https://t.me/') + un;
+    }
+  } catch (e) {}
+  return '';
+}
 
 /* ─────────────── لایه ربات‌ها (ارسال) ─────────────── */
 async function botCall(base, token, method, payload) {
@@ -341,6 +362,8 @@ async function apiPublicConfig(db, env) {
     min_topup: num(stg(st, 'min_topup', 50000)),
     has_card: !!stg(st, 'card_number', ''),
     has_gateway: !!stg(st, 'gateway_url', ''),
+    bale_bot: await botPublicLink(db, env, st, 'bale'),
+    tg_bot: await botPublicLink(db, env, st, 'tg'),
     modes: MODES
   });
 }
@@ -734,6 +757,9 @@ async function apiSettingsSet(db, req) {
   if (!u || u.role !== 'admin') return j({ ok: false, error: 'دسترسی ادمین لازم است' }, 403);
   const b = await body(req);
   for (const k of Object.keys(b)) if (SET_KEYS.includes(k)) await setSetting(db, k, b[k]);
+  /* اگر توکن ربات عوض شد، کش username باید تازه شود */
+  if (b.bale_token !== undefined) { try { await db.prepare("DELETE FROM settings WHERE key='bale_username'").run(); } catch (e) {} }
+  if (b.tg_token !== undefined) { try { await db.prepare("DELETE FROM settings WHERE key='tg_username'").run(); } catch (e) {} }
   return j({ ok: true });
 }
 /* پیام همگانی — دسته‌ای برای جلوگیری از خطای subrequest */
@@ -1520,6 +1546,43 @@ async function handlePayProof(db, env, p, chatId, user, s, msg) {
   return sendBot(bBase(p), T, chatId, `✅ <b>عکس رسید ثبت شد و برای مدیریت ارسال گردید.</b>\n\n⏳ پس از بررسی، نتیجه به شما اعلام می‌شود.\n🧾 کد پیگیری اختیاری است — اگر کد تراکنش را داری همین‌جا بفرست تا ثبت شود، یا /skip را بزن.`, s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }]] : [[{ text: '👤 حساب من', callback_data: 'm:acc' }]]);
 }
 
+/* ─────────────── درگاه پرداخت ربات (پل سایت ← ربات) ───────────────
+   سایت به‌جای گرفتن کد پیگیری، کاربر را با لینک «?start=pay_<id>» به ربات می‌فرستد.
+   اینجا پیلود پرداخت بررسی و جریان عکس رسید (الزامی) شروع می‌شود. */
+async function handlePayBridge(db, env, p, chatId, user, payId) {
+  const T = bToken(env, await getSettings(db), p);
+  const pay = await db.prepare('SELECT * FROM payments WHERE id=?1').bind(payId).first();
+  if (!pay) { await setBState(db, p, chatId, null); return sendBot(bBase(p), T, chatId, '⚠️ <b>پرداخت یافت نشد.</b>\nممکن است لینک قدیمی باشد — لطفاً از سایت دوباره اقدام کن.'); }
+  if (pay.user_id !== user.id) {
+    const isGuest = !user.password_hash && (user.username === 'P' + chatId || String(user.username).startsWith('P' + chatId + '_'));
+    if (isGuest) {
+      await sendBot(bBase(p), T, chatId, '🔗 <b>برای ثبت رسید، اول حسابت را متصل کن</b>\n━━━━━━━━━━━━━━━━━━\nاین پرداخت در حسابتِ «سایت» ثبت شده است. اگر این پرداخت مال توست:\n\n۱. همین‌جا در ربات دستور <code>/link</code> را بزن و کد اتصال را بگیر\n۲. کد را در «پروفایل» سایت، بخش اتصال ربات وارد کن\n۳. دوباره لینک پرداخت را باز کن ✅\n\nبا اتصال، موجودی و ثبت‌نام‌هایت در سایت و ربات یکی می‌شود.');
+      return showLinkCode(db, env, p, chatId, null, user);
+    }
+    return sendBot(bBase(p), T, chatId, '⛔️ این لینک پرداخت متعلق به حساب دیگری است.');
+  }
+  if (pay.status !== 'pending') {
+    return sendBot(bBase(p), T, chatId, `ℹ️ این پرداخت قبلاً بررسی شده است (${pay.status === 'approved' ? '✅ تایید شده' : '❌ رد شده'}).${pay.status === 'approved' ? '\nاگر ورودی روم بوده، جایگاهت قطعی است.' : '\nدر صورت نیاز دوباره از سایت اقدام کن.'}`);
+  }
+  if (pay.proof_file_id) {
+    await setBState(db, p, chatId, { flow: 'receipt', data: { payment_id: pay.id, room: num(pay.room_id) || 0, proof: true } });
+    return sendBot(bBase(p), T, chatId, '📸 <b>عکس رسید این پرداخت قبلاً ثبت شده</b> و در انتظار بررسی مدیریت است.\n\n🧾 اگر کد پیگیری داری، همین‌جا بفرست تا ثبت شود (اختیاری) یا /skip را بزن.', num(pay.room_id) ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${pay.room_id}` }]] : [[{ text: '👤 حساب من', callback_data: 'm:acc' }]]);
+  }
+  const st = await getSettings(db);
+  await setBState(db, p, chatId, { flow: 'receipt', data: { payment_id: pay.id, room: num(pay.room_id) || 0 } });
+  const kb = [];
+  let t;
+  if (pay.method === 'online') {
+    t = `🏦 <b>پرداخت آنلاین</b>\n\n💰 مبلغ: <b>${money(pay.amount)} تومان</b>\nبا دکمه زیر به درگاه برو و پرداخت کن، سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی).\n🧾 کد پیگیری اختیاری است — در کپشن عکس یا جداگانه.`;
+    kb.push([{ text: '🏦 رفتن به درگاه پرداخت', url: String(stg(st, 'gateway_url', '')).replace('{amount}', String(num(pay.amount))).replace('{desc}', encodeURIComponent(pay.kind === 'topup' ? 'Topup' : 'Room#' + pay.room_id)) }]);
+  } else {
+    t = `💳 <b>پرداخت کارت به کارت</b>\n━━━━━━━━━━━━━━━━━━\n🏦 بانک: ${esc(stg(st, 'bank_name', '')) || '—'}\n🔢 شماره کارت:\n<code>${esc(stg(st, 'card_number', ''))}</code>\n👤 به نام: ${esc(stg(st, 'card_name', '')) || '—'}\n💰 مبلغ: <b>${money(pay.amount)} تومان</b>\n\n⚠️ مبلغ را دقیقاً ${money(pay.amount)} تومان واریز کن.\n📸 سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی).\n🧾 کد پیگیری اختیاری است — می‌توانی در کپشن عکس بنویسی.`;
+  }
+  if (num(pay.room_id)) kb.push([{ text: '🔙 بازگشت به روم', callback_data: `rm:${pay.room_id}` }]);
+  kb.push([{ text: '👤 حساب من', callback_data: 'm:acc' }]);
+  return sendBot(bBase(p), T, chatId, t, kb);
+}
+
 /* ─────────────── هندلر پیام‌های متنی ربات ─────────────── */
 async function handleBotMessage(db, env, p, msg) {
   if (!msg || !msg.from || msg.from.is_bot) return;
@@ -1533,8 +1596,10 @@ async function handleBotMessage(db, env, p, msg) {
     if (text === '/start') await sendBot(bBase(p), bToken(env, st0, p), chatId, '⛔️ دسترسی شما توسط مدیریت مسدود شده است.');
     return;
   }
-  /* دستورها */
-  if (text === '/start') {
+  /* دستورها — /start با پیلود درگاه پرداخت: /start pay_<paymentId> */
+  const startPay = text.match(/^\/start(@\S+)?\s+pay_(\d+)\s*$/i);
+  if (text === '/start' || startPay) {
+    if (startPay) return handlePayBridge(db, env, p, chatId, user, num(startPay[2]));
     if (isNew) {
       await db.prepare('INSERT INTO transactions (user_id,amount,kind,ref) VALUES(?1,0,?2,?3)').bind(user.id, 'register', 'signup').run();
       if (madeAdmin) await sendBot(bBase(p), bToken(env, st0, p), chatId, '🛡 <b>شما به عنوان مدیر اصلی پلتفرم ثبت شدید!</b>\n\nهمه بخش‌ها در اختیار شماست. برای شروع، «🛡 پنل مدیریت» را بزن و تنظیمات را کامل کن.\n\n👇 از منوی زیر استفاده کن:', mainKb(user, true));

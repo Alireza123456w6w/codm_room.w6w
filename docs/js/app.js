@@ -432,7 +432,7 @@ async function joinModal(roomId, slotNo) {
     return;
   }
   const opts = [`<button class="payopt" onclick="doJoin(${roomId},${slotNo},'wallet')"><span class="pi">💼</span><span class="pt"><b>کیف پول داخلی</b><small>موجودی: ${money(S.me.wallet)} تومان — پرداخت آنی و قطعی</small></span></button>`];
-  if (cfg.has_card) opts.push(`<button class="payopt" onclick="payCard(${roomId},${slotNo})"><span class="pi">💳</span><span class="pt"><b>کارت به کارت</b><small>شماره کارت را می‌گیری، بعد از واریز کد پیگیری را ثبت می‌کنی</small></span></button>`);
+  if (cfg.has_card) opts.push(`<button class="payopt" onclick="payCard(${roomId},${slotNo})"><span class="pi">💳</span><span class="pt"><b>کارت به کارت</b><small>واریز به کارت + ارسال عکس رسید در ربات بله</small></span></button>`);
   if (cfg.has_gateway) opts.push(`<button class="payopt" onclick="doJoin(${roomId},${slotNo},'online')"><span class="pi">🏦</span><span class="pt"><b>درگاه پرداخت آنلاین</b><small>پرداخت امن با کارت بانکی</small></span></button>`);
   modal(`<h3>🎯 رزرو موقعیت ${fa(slotNo)}</h3>
     <p class="msub">ورودی این روم: <b style="color:var(--acc)">${money(fee)} تومان</b> — روش پرداخت را انتخاب کن:</p>
@@ -450,38 +450,47 @@ window.doJoin = async (roomId, slotNo, method) => {
   } catch (e) { if (e.data && e.data.need === 'topup') topupModal(); }
 };
 window.payCard = (roomId, slotNo) => { doJoin(roomId, slotNo, 'card'); };
+/* درگاه پرداخت ربات: سایت کد پیگیری نمی‌گیرد — رسید در ربات ثبت می‌شود */
+function payBridge() {
+  const cfg = S.cfg || {};
+  if (cfg.bale_bot) return { url: cfg.bale_bot, label: 'بله 💬', plat: 'bale' };
+  if (cfg.tg_bot) return { url: cfg.tg_bot, label: 'تلگرام 📱', plat: 'tg' };
+  return null;
+}
+function paySteps(kind) {
+  return `<div class="paysteps">
+    <div>۱️⃣ مبلغ را دقیقاً واریز کن</div>
+    <div>۲️⃣ از دکمه زیر ربات را باز کن و <b>عکس رسید</b> را بفرست (الزامی — کد پیگیری اختیاری است)</div>
+    <div>۳️⃣ پس از تایید مدیریت، ${kind === 'topup' ? 'کیف پولت شارژ می‌شود' : 'جایگاهت قطعی می‌شود'} ✅</div>
+  </div>`;
+}
+function bridgeCta(payId) {
+  const br = payBridge();
+  if (!br) return '<div class="malert err">⚠️ لینک ربات پرداخت تنظیم نشده — لطفاً با پشتیبانی تماس بگیر.</div>';
+  const hint = (br.plat === 'bale' && S.me && !S.me.bale_id) || (br.plat === 'tg' && S.me && !S.me.telegram_id)
+    ? '<div class="malert info">💡 اگر حسابت به این ربات وصل نیست، اول در ربات دستور <code class="ltr">/link</code> را بزن و کد را در «پروفایل» سایت وارد کن؛ بعد دوباره این دکمه را بزن.</div>' : '';
+  return `<a class="btn blk bale" href="${esc(br.url)}?start=pay_${payId}" target="_blank" rel="noopener">💬 ارسال عکس رسید در ربات ${br.label}</a>${hint}`;
+}
 function cardModal(payId, card, fee, roomId) {
   modal(`<h3>💳 پرداخت کارت به کارت</h3>
-    <p class="msub">مبلغ <b style="color:var(--acc)">${money(fee)} تومان</b> را به کارت زیر واریز کن و سپس کد پیگیری تراکنش را وارد کن:</p>
+    <p class="msub">مبلغ <b style="color:var(--acc)">${money(fee)} تومان</b> را به کارت زیر واریز کن:</p>
     <div class="cardinfo">
       <div class="cnum">${esc(card.number)}</div>
       <div class="cnm">👤 ${esc(card.name) || '—'} ${card.bank ? '• 🏦 ' + esc(card.bank) : ''}</div>
       <button class="copybtn" onclick="copyTxt('${esc(card.number)}')">📋 کپی شماره کارت</button>
     </div>
-    <div class="field"><label>🧾 کد پیگیری / آخر ۴ رقم تراکنش</label><input id="refIn" placeholder="مثال: 839201"></div>
-    <div id="payErr"></div>
-    <button class="btn blk" onclick="submitRef(${payId},${roomId})">✅ ثبت پرداخت</button>`);
+    ${paySteps(roomId ? 'entry' : 'topup')}
+    ${bridgeCta(payId)}
+    <div id="payErr"></div>`);
 }
 function gatewayModal(payId, url, fee, roomId) {
   modal(`<h3>🏦 پرداخت آنلاین</h3>
-    <p class="msub">مبلغ <b style="color:var(--acc)">${money(fee)} تومان</b> — به درگاه برو، پرداخت کن و کد پیگیری را برگردان:</p>
+    <p class="msub">مبلغ <b style="color:var(--acc)">${money(fee)} تومان</b> — با دکمه زیر به درگاه برو و پرداخت کن:</p>
     <a class="btn blk info" href="${esc(url)}" target="_blank" rel="noopener">🏦 رفتن به درگاه پرداخت</a>
-    <div class="field" style="margin-top:14px"><label>🧾 کد پیگیری تراکنش</label><input id="refIn" placeholder="مثال: 839201"></div>
-    <div id="payErr"></div>
-    <button class="btn blk" onclick="submitRef(${payId},${roomId})">✅ ثبت پرداخت</button>`);
+    ${paySteps(roomId ? 'entry' : 'topup')}
+    ${bridgeCta(payId)}
+    <div id="payErr"></div>`);
 }
-window.submitRef = async (payId, roomId) => {
-  const ref = $('#refIn').value.trim();
-  if (!ref) return toast('کد پیگیری را وارد کن', 'err');
-  try {
-    await api(`/api/payments/${payId}/ref`, { method: 'POST', body: { ref_code: ref } });
-    closeModal();
-    toast('✅ رسید ثبت شد — پس از تایید مدیریت مطلع می‌شوی', 'ok', 5000);
-    route();
-  } catch (e) {
-    if ($('#payErr')) $('#payErr').innerHTML = `<div class="malert err">${esc(e.message)}</div>`;
-  }
-};
 window.leaveRoom = async (roomId) => {
   if (!confirm('مطمئنی می‌خوای انصراف بدی؟ اگر پرداخت کرده باشی، پولت به کیف پولت برمی‌گردد.')) return;
   try { await api(`/api/rooms/${roomId}/leave`, { method: 'POST' }); toast('انصرافت ثبت شد ✅', 'ok'); await refreshMe(); route(); } catch (e) {}
@@ -530,8 +539,8 @@ function viewHelp() {
     <div class="plist-card"><h3>💳 روش‌های پرداخت</h3>
       <p class="mut" style="line-height:2.2;font-size:14px">
       <b style="color:var(--txt)">💼 کیف پول:</b> پرداخت آنی و قطعی. از بخش پروفایل شارژ کن.<br>
-      <b style="color:var(--txt)">💳 کارت به کارت:</b> واریز کن و کد پیگیری ثبت کن؛ بعد از تایید مدیریت قطعی می‌شود.<br>
-      <b style="color:var(--txt)">🏦 درگاه آنلاین:</b> پرداخت امن و سپس ثبت کد پیگیری.</p>
+      <b style="color:var(--txt)">💳 کارت به کارت:</b> مبلغ را واریز کن و عکس رسید را در ربات بله بفرست؛ بعد از تایید مدیریت قطعی می‌شود.<br>
+      <b style="color:var(--txt)">🏦 درگاه آنلاین:</b> پرداخت امن در درگاه و ارسال عکس رسید در ربات بله.</p>
     </div>
     <div class="plist-card"><h3>🔗 اتصال سایت و ربات</h3>
       <p class="mut" style="line-height:2.2;font-size:14px">
@@ -638,7 +647,7 @@ function topupModal() {
   const cfg = S.cfg || {};
   const min = cfg.min_topup || 50000;
   const methods = [];
-  if (cfg.has_card) methods.push(`<button class="payopt" onclick="topupMethod('card')"><span class="pi">💳</span><span class="pt"><b>کارت به کارت</b><small>واریز + ثبت کد پیگیری</small></span></button>`);
+  if (cfg.has_card) methods.push(`<button class="payopt" onclick="topupMethod('card')"><span class="pi">💳</span><span class="pt"><b>کارت به کارت</b><small>واریز + ارسال عکس رسید در ربات بله</small></span></button>`);
   if (cfg.has_gateway) methods.push(`<button class="payopt" onclick="topupMethod('online')"><span class="pi">🏦</span><span class="pt"><b>درگاه آنلاین</b><small>پرداخت امن</small></span></button>`);
   modal(`<h3>💵 شارژ کیف پول</h3>
     <p class="msub">حداقل شارژ: <b style="color:var(--acc)">${money(min)} تومان</b></p>
@@ -737,7 +746,7 @@ async function loadAdm() {
       b.innerHTML = `
       <div class="malert info">💡 توکن‌ها را از @BotFather تلگرام یا BotFather بله بگیر. درگاه به شکل <b class="ltr">https://pay.example.com/{amount}</b> باشد؛ اگر کاری تنظیم نشود، دکمه‌اش در سایت و ربات‌ها <b>خودکار مخفی می‌شود</b>.</div>
       <div class="set-grid">
-        ${[['tg_token', '🤖 توکن ربات تلگرام'], ['bale_token', '💬 توکن ربات بله'], ['card_number', '💳 شماره کارت (کارت به کارت)'], ['card_name', '👤 نام صاحب کارت'], ['bank_name', '🏦 نام بانک'], ['gateway_url', '🏦 آدرس درگاه ({amount})'], ['website_url', '🌐 آدرس این سایت'], ['announce_channel', '📣 کانال اعلان روم جدید'], ['min_topup', '⬇️ حداقل شارژ (تومان)'], ['support_bot', '🛡 لینک بات پشتیبانی'], ['shop_bot', '🛒 لینک بات فروشگاه'], ['welcome', '👋 متن خوش‌آمد ربات']].map(([k, l]) => `
+        ${[['tg_token', '🤖 توکن ربات تلگرام'], ['bale_token', '💬 توکن ربات بله'], ['card_number', '💳 شماره کارت (کارت به کارت)'], ['card_name', '👤 نام صاحب کارت'], ['bank_name', '🏦 نام بانک'], ['gateway_url', '🏦 آدرس درگاه ({amount})'], ['bale_bot_link', '💬 لینک ربات بله (خودکار از توکن — دستی اختیاری)'], ['tg_bot_link', '📱 لینک ربات تلگرام (دستی اختیاری)'], ['website_url', '🌐 آدرس این سایت'], ['announce_channel', '📣 کانال اعلان روم جدید'], ['min_topup', '⬇️ حداقل شارژ (تومان)'], ['support_bot', '🛡 لینک بات پشتیبانی'], ['shop_bot', '🛒 لینک بات فروشگاه'], ['welcome', '👋 متن خوش‌آمد ربات']].map(([k, l]) => `
         <div class="setrow"><label>${l}</label><input id="set_${k}" value="${esc(st[k] || '')}"></div>`).join('')}
       </div>
       <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
@@ -790,7 +799,7 @@ window.prizeAct = async (id, act) => {
   try { await api(`/api/prizes/${id}/${act}`, { method: 'POST' }); toast(act === 'approve' ? 'جایزه پرداخت شد ✅' : 'رد شد', 'ok'); loadAdm(); } catch (e) {}
 };
 window.saveSettings = async () => {
-  const keys = ['tg_token', 'bale_token', 'card_number', 'card_name', 'bank_name', 'gateway_url', 'website_url', 'announce_channel', 'min_topup', 'support_bot', 'shop_bot', 'welcome'];
+  const keys = ['tg_token', 'bale_token', 'card_number', 'card_name', 'bank_name', 'gateway_url', 'bale_bot_link', 'tg_bot_link', 'website_url', 'announce_channel', 'min_topup', 'support_bot', 'shop_bot', 'welcome'];
   const body = {};
   keys.forEach((k) => { body[k] = $('#set_' + k).value; });
   try { await api('/api/settings', { method: 'POST', body }); toast('تنظیمات ذخیره شد ✅', 'ok'); await api('/api/public/config', { silent: true }).then((c) => { S.cfg = c; }); } catch (e) {}

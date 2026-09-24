@@ -378,3 +378,11 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
   .reveal{opacity:1;transform:none}
   #app{animation:none}
 }
+
+/* درگاه پرداخت ربات (پل سایت ← ربات بله) */
+.btn.bale{background:linear-gradient(135deg,#3f8cff,#1856c4);color:#fff;position:relative;overflow:hidden;animation:fadeIn .35s both}
+.btn.bale::before{content:'';position:absolute;inset:0;background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.22) 50%,transparent 60%);transform:translateX(150%);animation:sheen 2.8s ease-in-out infinite}
+.btn.bale:hover{filter:brightness(1.12)}
+.paysteps{display:flex;flex-direction:column;gap:8px;margin:14px 0;padding:12px 14px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;font-size:13px;line-height:1.9;color:var(--mut);animation:fadeIn .4s both}
+.paysteps b{color:var(--txt)}
+.paysteps>div{position:relative;padding-inline-start:4px}
