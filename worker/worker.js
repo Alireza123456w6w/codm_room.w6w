@@ -15,7 +15,7 @@
      /setup              →  صفحه اتصال سریع وب‌هوک‌ها
    ══════════════════════════════════════════════════════════════ */
 
-const V = '1.1.0';
+const V = '1.3.0';
 const TG_BASE = 'https://api.telegram.org';
 const BL_BASE = 'https://tapi.bale.ai';
 const FA_D = '۰۱۲۳۴۵۶۷۸۹';
@@ -411,7 +411,7 @@ async function apiLink(db, env, req) {
   const code = String(b.code || '').trim().toUpperCase();
   const lc = await db.prepare('SELECT * FROM link_codes WHERE code=?1 AND expires_at > datetime(\'now\')').bind(code).first();
   if (!lc) return j({ ok: false, error: 'کد نامعتبر یا منقضی است. در ربات دستور /link را بزنید' }, 400);
-  if (lc.user_id === u.id) return j({ ok: false, error: 'این اکانت قبلاً متصل است' }, 400);
+  if (lc.user_id === u.id) return j({ ok: false, error: 'این پلتفرم از قبل به همین حسابت متصل است ✅ — برای پلتفرم دیگر، از آن ربات /link بزن' }, 400);
   const bot = await db.prepare('SELECT * FROM users WHERE id=?1').bind(lc.user_id).first();
   if (!bot) return j({ ok: false, error: 'اکانت ربات یافت نشد' }, 400);
   const tg = u.telegram_id || bot.telegram_id;
@@ -1026,10 +1026,22 @@ async function showWeb(db, env, p, chatId, msgId) {
   await editOrSend(db, env, p, chatId, msgId, site ? `🌐 وبسایت ما:\n${site}` : '🌐 وبسایت هنوز توسط مدیریت تنظیم نشده است.', kb);
 }
 async function showLinkCode(db, env, p, chatId, msgId, u) {
+  /* اگر همین پلتفرم از قبل به حساب سایت متصل است، به‌جای کد بی‌فایده راهنمایی بده */
+  const pid = String(p === 'tg' ? (u.telegram_id || '') : (u.bale_id || ''));
+  const isBotName = !!pid && (u.username === 'P' + pid || u.username.startsWith('P' + pid + '_'));
+  if (u.password_hash && pid && !isBotName) {
+    const otherTg = p !== 'tg';
+    const otherOk = !!(otherTg ? u.telegram_id : u.bale_id);
+    let t = `🔗 <b>حساب ${p === 'tg' ? 'تلگرام' : 'بله'} تو از قبل متصل است!</b>\n━━━━━━━━━━━━━━━━━━\n✅ این پلتفرم هم‌اکنون به حسابت وصل است و نیازی به اتصال دوباره نیست.\n📛 نام کاربری سایت: <code>${esc(u.username)}</code>\n`;
+    t += otherOk
+      ? '\n🎉 هر دو پلتفرم (تلگرام + بله) به حسابت متصل‌اند — همه‌چیز آماده است!'
+      : `\n💡 برای اتصال پلتفرم دیگر، از ربات ${otherTg ? 'تلگرام 📱' : 'بله 💬'} دستور <code>/link</code> را بزن و کد را در «پروفایل» سایت وارد کن.`;
+    return editOrSend(db, env, p, chatId, msgId, t, [[{ text: '👤 حساب من', callback_data: 'm:acc' }]]);
+  }
   await db.prepare('DELETE FROM link_codes WHERE user_id=?1').bind(u.id).run();
   const code = ('W6W' + rid(6)).toUpperCase();
   await db.prepare("INSERT INTO link_codes (code,user_id,platform,expires_at) VALUES(?1,?2,?3,datetime('now','+15 minutes'))").bind(code, u.id, p).run();
-  const t = `🔗 <b>اتصال اکانت ربات به سایت</b>\n━━━━━━━━━━━━━━━━━━\n۱. وارد سایت شو و وارد حسابت شو\n۲. به بخش «پروفایل» برو\n۳. این کد را در قسمت «اتصال ربات» وارد کن:\n\n🔑 <code>${code}</code>\n\n⏰ این کد ۱۵ دقیقه اعتبار دارد.\nبا اتصال، موجودی و اطلاعات شما در سایت و ربات یکی می‌شود. ✅`;
+  const t = `🔗 <b>اتصال اکانت ربات به سایت</b>\n━━━━━━━━━━━━━━━━━━\n۱. وارد سایت شو و وارد حسابت شو\n۲. به بخش «پروفایل» برو\n۳. این کد را در قسمت «اتصال ${p === 'tg' ? 'تلگرام' : 'بله'}» وارد کن:\n\n🔑 <code>${code}</code>\n\n⏰ این کد ۱۵ دقیقه اعتبار دارد.\nبا اتصال، موجودی و اطلاعات شما در سایت و ربات یکی می‌شود. ✅`;
   await editOrSend(db, env, p, chatId, msgId, t, [[{ text: '🔙 حساب من', callback_data: 'm:acc' }]]);
 }
 async function editOrSend(db, env, p, chatId, msgId, text, kb) {

@@ -365,6 +365,13 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
 .layout-hint.ok{background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.35);color:#7de3a4}
 .layout-hint.err{background:rgba(255,71,87,.08);border:1px solid rgba(255,71,87,.4);color:#ff8b96}
 
+/* وضعیت اتصال پلتفرم‌ها در پروفایل */
+.linkhint{margin-top:14px;padding:10px 14px;border-radius:10px;font-size:12.5px;line-height:1.9;background:rgba(255,159,26,.07);border:1px dashed rgba(255,159,26,.35);color:var(--mut);animation:fadeIn .35s both}
+.linkhint code{background:var(--bg2);padding:1px 7px;border-radius:6px;direction:ltr;display:inline-block}
+.lok{color:#7de3a4}
+.lmut{color:var(--mut);font-weight:400}
+.apiver{display:inline-block;margin-inline-start:14px;padding:2px 10px;border-radius:100px;font-size:11px;color:var(--mut);background:var(--bg2);border:1px solid var(--line);direction:ltr}
+
 /* حرکت کمتر: احترام به تنظیم کاربر */
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}

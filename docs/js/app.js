@@ -535,7 +535,7 @@ function viewHelp() {
     </div>
     <div class="plist-card"><h3>🔗 اتصال سایت و ربات</h3>
       <p class="mut" style="line-height:2.2;font-size:14px">
-      اگر در ربات <code class="ltr">/link</code> بزنی، یک کد می‌گیری. آن کد را در «پروفایل» سایت وارد کن تا حساب‌ها یکی شوند؛ موجودی و روم‌هایت در هر دو جا یکی نمایش داده می‌شود.</p>
+      اگر اول در ربات ثبت‌نام کرده‌ای، در ربات تلگرام 📱 یا بله 💬 دستور <code class="ltr">/link</code> بزن و کد را بگیر؛ بعد در «پروفایل» سایت دکمه «اتصال تلگرام» یا «اتصال بله» را بزن و کد را وارد کن تا حساب‌ها یکی شوند؛ موجودی و روم‌هایت در هر سه جا یکی نمایش داده می‌شود. هر پلتفرم جداگانه وصل می‌شود — مثلاً می‌توانی اول بله را وصل کنی و بعداً تلگرام را.</p>
     </div>
     <div class="plist-card"><h3>⚠️ قوانین مهم</h3>
       <p class="mut" style="line-height:2.2;font-size:14px">
@@ -569,11 +569,16 @@ async function viewProfile() {
           <div style="margin-top:16px;font-size:12.5px;line-height:2.2" class="mut">
             📛 یوزرنیم: <b class="ltr">${esc(S.me.username)}</b><br>
             🎮 آیدی کالاف: <b>${esc(S.me.codm_id) || '—'}</b><br>
-            📱 تلگرام: <b>${S.me.telegram_id ? '✅ متصل' : '—'}</b> &nbsp; 💬 بله: <b>${S.me.bale_id ? '✅ متصل' : '—'}</b>
+            📱 تلگرام: <b class="${S.me.telegram_id ? 'lok' : 'lmut'}">${S.me.telegram_id ? '✅ متصل' : '— وصل نیست'}</b><br>
+            💬 بله: <b class="${S.me.bale_id ? 'lok' : 'lmut'}">${S.me.bale_id ? '✅ متصل' : '— وصل نیست'}</b>
           </div>
+          ${!S.me.telegram_id || !S.me.bale_id ? `<div class="linkhint">💡 برای اتصال، در رباتِ همان پلتفرم دستور <code class="ltr">/link</code> را بزن و کدش را اینجا وارد کن:</div>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            ${!S.me.telegram_id ? `<button class="btn sm ghost" onclick="linkModal('tg')">🔗 اتصال تلگرام</button>` : ''}
+            ${!S.me.bale_id ? `<button class="btn sm ghost" onclick="linkModal('bl')">🔗 اتصال بله</button>` : ''}
+          </div>` : `<div class="linkhint lok" style="margin-top:12px">🎉 هر دو پلتفرم تلگرام و بله به حسابت متصل‌اند!</div>`}
           <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
             <button class="btn sm ghost" onclick="editProfileModal()">✏️ ویرایش پروفایل</button>
-            ${!S.me.telegram_id && !S.me.bale_id ? `<button class="btn sm ghost" onclick="linkModal()">🔗 اتصال ربات</button>` : ''}
             <button class="btn sm ghost" onclick="logout()">🚪 خروج</button>
           </div>
         </div>
@@ -597,9 +602,12 @@ async function viewProfile() {
     </div>
   </div>`;
 }
-window.linkModal = () => {
+window.linkModal = (pl) => {
+  const tgOk = !!S.me.telegram_id, blOk = !!S.me.bale_id;
+  const botName = pl === 'tg' ? 'تلگرام 📱' : pl === 'bl' ? 'بله 💬' : (!tgOk ? 'تلگرام 📱 یا بله 💬' : 'بله 💬');
   modal(`<h3>🔗 اتصال اکانت ربات</h3>
-    <p class="msub">در ربات تلگرام یا بله دستور <code class="ltr">/link</code> را بزن، کد ۹ رقمی را بگیر و اینجا وارد کن. موجودی و اطلاعات ربات‌ات با سایت یکی می‌شود.</p>
+    <p class="msub">در ربات <b>${botName}</b> دستور <code class="ltr">/link</code> را بزن، کد اتصال را بگیر و همین‌جا وارد کن. موجودی و اطلاعات ربات‌ات با سایت یکی می‌شود.</p>
+    <p class="msub" style="font-size:12px">وضعیت فعلی: 📱 تلگرام ${tgOk ? '✅' : '—'} &nbsp;|&nbsp; 💬 بله ${blOk ? '✅' : '—'}</p>
     <div class="field"><label>🔑 کد اتصال</label><input id="linkIn" class="ltr" placeholder="W6WXXXXXX"></div>
     <div id="linkErr"></div>
     <button class="btn blk" onclick="doLink()">🔗 اتصال</button>`);
@@ -933,6 +941,10 @@ async function boot() {
     try { const r = await api('/api/me', { silent: true }); S.me = r.user; S.meData = r; }
     catch (e) { S.me = null; }
   }
+  try {
+    const h = await (await fetch(S.api + '/api/health')).json();
+    const el = $('#apiVer'); if (el && h.version) el.textContent = 'نسخه سرور: v' + h.version;
+  } catch (e) {}
   renderTop();
 }
 window.addEventListener('hashchange', route);
