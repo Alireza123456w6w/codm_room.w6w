@@ -386,3 +386,22 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
 .paysteps{display:flex;flex-direction:column;gap:8px;margin:14px 0;padding:12px 14px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;font-size:13px;line-height:1.9;color:var(--mut);animation:fadeIn .4s both}
 .paysteps b{color:var(--txt)}
 .paysteps>div{position:relative;padding-inline-start:4px}
+
+/* ───── v1.5: کد معرف + آیدی ربات‌ها ───── */
+.refbox{margin-top:14px;padding:14px;border-radius:12px;background:rgba(255,159,26,.06);border:1px solid rgba(255,159,26,.3);animation:fadeIn .4s both}
+.refbox .wl{font-size:12px;color:var(--mut);margin-bottom:8px;font-weight:700}
+.refcode-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.refcode-row code{font-size:17px;font-weight:800;letter-spacing:2px;color:var(--acc);background:var(--bg2);border:1px dashed rgba(255,159,26,.45);padding:7px 16px;border-radius:10px}
+.refstat{margin-top:8px;font-size:12.5px;color:var(--txt);font-weight:700}
+.bots-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;max-width:640px}
+.botcard{display:flex;flex-direction:column;align-items:center;gap:6px;padding:24px 18px;border-radius:16px;background:linear-gradient(160deg,var(--bg2),#0a0e14);border:1px solid var(--line);text-decoration:none;color:var(--txt);transition:transform .25s,border-color .25s,box-shadow .25s;position:relative;overflow:hidden}
+.botcard::before{content:'';position:absolute;inset:0;background:linear-gradient(105deg,transparent 40%,rgba(255,159,26,.09) 50%,transparent 60%);transform:translateX(150%);transition:transform .7s}
+.botcard:hover{transform:translateY(-5px);border-color:rgba(255,159,26,.5);box-shadow:0 14px 34px rgba(0,0,0,.45)}
+.botcard:hover::before{transform:translateX(-150%)}
+.botcard .bic{font-size:32px}
+.botcard h3{font-size:15px;color:var(--txt)}
+.botcard .bid{font-size:14px;font-weight:800;color:var(--acc);letter-spacing:.5px}
+.botcard small{color:var(--mut);font-size:11.5px}
+.botids{margin-top:12px;display:flex;gap:10px;flex-wrap:wrap}
+.botids a{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:100px;font-size:12.5px;font-weight:700;color:var(--acc);background:var(--bg2);border:1px solid var(--line);text-decoration:none;transition:border-color .2s,color .2s;direction:ltr}
+.botids a:hover{border-color:rgba(255,159,26,.55);color:#ffc35e}

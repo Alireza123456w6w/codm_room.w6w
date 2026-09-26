@@ -15,7 +15,7 @@
      /setup              →  صفحه اتصال سریع وب‌هوک‌ها
    ══════════════════════════════════════════════════════════════ */
 
-const V = '1.4.0';
+const V = '1.5.0';
 const TG_BASE = 'https://api.telegram.org';
 const BL_BASE = 'https://tapi.bale.ai';
 const FA_D = '۰۱۲۳۴۵۶۷۸۹';
@@ -42,7 +42,7 @@ const MODES = {
 };
 const TEAM_NAMES = ['تیم آ', 'تیم ب', 'تیم ج', 'تیم د', 'تیم هـ', 'تیم و'];
 const ROOM_STATUS = { open: '🟢 باز', full: '🟡 تکمیل ظرفیت', running: '🔴 در حال اجرا', finished: '⚫️ پایان یافت', cancelled: '❌ لغو شد' };
-const SET_KEYS = ['tg_token','bale_token','admin_secret','card_number','card_name','bank_name','gateway_url','channel_link','support_bot','website_url','offers_site','offers_page','shop_bot','min_topup','welcome','announce_channel','bale_bot_link','tg_bot_link'];
+const SET_KEYS = ['tg_token','bale_token','admin_secret','card_number','card_name','bank_name','gateway_url','channel_link','support_bot','website_url','offers_site','offers_page','shop_bot','min_topup','welcome','announce_channel','bale_bot_link','tg_bot_link','tg_bot_id','bale_bot_id','referral_reward'];
 const BC_BATCH = 20;
 
 /* ─────────────── execution context (waitUntil) ─────────────── */
@@ -75,20 +75,29 @@ const SCHEMA_SQL = [
   "CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT)",
   "CREATE TABLE IF NOT EXISTS link_codes (code TEXT PRIMARY KEY, user_id INTEGER NOT NULL, platform TEXT, expires_at TEXT)",
   "CREATE TABLE IF NOT EXISTS bot_state (key TEXT PRIMARY KEY, data TEXT, updated_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS referral_uses (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, owner_id INTEGER NOT NULL, buyer_id INTEGER NOT NULL, room_id INTEGER, amount REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE INDEX IF NOT EXISTS idx_refuse_owner ON referral_uses(owner_id)",
+  "CREATE INDEX IF NOT EXISTS idx_refuse_buyer ON referral_uses(buyer_id)",
   "CREATE INDEX IF NOT EXISTS idx_slots_room ON slots(room_id)",
   "CREATE INDEX IF NOT EXISTS idx_slots_user ON slots(user_id)",
   "CREATE INDEX IF NOT EXISTS idx_pay_user ON payments(user_id)",
   "CREATE INDEX IF NOT EXISTS idx_pay_status ON payments(status)",
   "CREATE INDEX IF NOT EXISTS idx_tx_user ON transactions(user_id)",
   "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)",
-  "INSERT OR IGNORE INTO settings (key, value) VALUES ('min_topup','50000'),('welcome','به بزرگترین پلتفرم مدیریت روم‌های کالاف دیوتی موبایل خوش آمدید! 🪖'),('bank_name',''),('card_number',''),('card_name',''),('gateway_url',''),('channel_link','https://t.me/offerspishnahadat_shop_bot'),('support_bot','https://t.me/offerspishnahadat_feedbackbot'),('website_url',''),('offers_site','https://offers-pishnahadat.vercel.app'),('offers_page','https://zaya.io/Offers_pishnahadat'),('shop_bot','https://t.me/offerspishnahadat_shop_bot')"
+  "INSERT OR IGNORE INTO settings (key, value) VALUES ('min_topup','50000'),('welcome','به بزرگترین پلتفرم مدیریت روم‌های کالاف دیوتی موبایل خوش آمدید! 🪖'),('bank_name',''),('card_number',''),('card_name',''),('gateway_url',''),('channel_link','https://t.me/offerspishnahadat_shop_bot'),('support_bot','https://t.me/offerspishnahadat_feedbackbot'),('website_url',''),('offers_site','https://offers-pishnahadat.vercel.app'),('offers_page','https://zaya.io/Offers_pishnahadat'),('shop_bot','https://t.me/offerspishnahadat_shop_bot'),('referral_reward','10000')"
 ];
 let INIT_P = null;
 /* مهاجرت‌های سبک — برای دیتابیس‌های موجود؛ خطای «ستون تکراری» بی‌صدا رد می‌شود */
 async function migrateDB(db) {
   const cols = [
     'ALTER TABLE payments ADD COLUMN proof_file_id TEXT',
-    'ALTER TABLE payments ADD COLUMN proof_platform TEXT'
+    'ALTER TABLE payments ADD COLUMN proof_platform TEXT',
+    'ALTER TABLE users ADD COLUMN referral_code TEXT',
+    'ALTER TABLE payments ADD COLUMN ref_owner_id INTEGER',
+    'ALTER TABLE payments ADD COLUMN ref_amount REAL',
+    'ALTER TABLE payments ADD COLUMN ref_code_used TEXT',
+    /* ایندکس یکتای کد معرف — بعد از ALTER ستون اجرا می‌شود */
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_refcode ON users(referral_code)'
   ];
   for (const c of cols) { try { await db.prepare(c).run(); } catch (e) {} }
 }
@@ -131,11 +140,13 @@ function stg(st, k, def) { const v = st[k]; return (v === undefined || v === nul
 function tgToken(env, st) { return (env && env.TELEGRAM_TOKEN) || stg(st, 'tg_token', ''); }
 function baleToken(env, st) { return (env && env.BALE_TOKEN) || stg(st, 'bale_token', ''); }
 
-/* لینک عمومی ربات (درگاه پرداخت سایت) — اولویت: دستیِ ادمین > کش username > getMe */
+/* لینک عمومی ربات (درگاه پرداخت سایت) — اولویت: لینک دستی ادمین > آیدی دستی ادمین > کش username > getMe */
 async function botPublicLink(db, env, st, platform) {
   const isBale = platform === 'bale';
   const manual = stg(st, isBale ? 'bale_bot_link' : 'tg_bot_link', '');
   if (manual) return manual;
+  const manId = stg(st, isBale ? 'bale_bot_id' : 'tg_bot_id', '');
+  if (manId) return (isBale ? 'https://ble.ir/' : 'https://t.me/') + String(manId).replace(/^@/, '');
   const cacheKey = isBale ? 'bale_username' : 'tg_username';
   const cached = stg(st, cacheKey, '');
   if (cached) return (isBale ? 'https://ble.ir/' : 'https://t.me/') + cached;
@@ -148,6 +159,23 @@ async function botPublicLink(db, env, st, platform) {
       keep(setSetting(db, cacheKey, un).catch(() => {}));
       return (isBale ? 'https://ble.ir/' : 'https://t.me/') + un;
     }
+  } catch (e) {}
+  return '';
+}
+/* آیدی عمومی ربات (نمایش در سایت و ربات‌ها — مثل codm_room_bot) — اولویت: آیدی دستی ادمین > کش username > getMe */
+async function botPublicId(db, env, st, platform) {
+  const isBale = platform === 'bale';
+  const manId = stg(st, isBale ? 'bale_bot_id' : 'tg_bot_id', '');
+  if (manId) return String(manId).replace(/^@/, '');
+  const cacheKey = isBale ? 'bale_username' : 'tg_username';
+  const cached = stg(st, cacheKey, '');
+  if (cached) return cached;
+  const tok = isBale ? baleToken(env, st) : tgToken(env, st);
+  if (!tok) return '';
+  try {
+    const r = await botCall(isBale ? BL_BASE : TG_BASE, tok, 'getMe', {});
+    const un = r && r.ok && r.result && r.result.username;
+    if (un) { keep(setSetting(db, cacheKey, un).catch(() => {})); return un; }
   } catch (e) {}
   return '';
 }
@@ -314,6 +342,8 @@ async function approvePayment(db, env, payId, adminId) {
     const room = await db.prepare('SELECT * FROM rooms WHERE id=?1').bind(pay.room_id).first();
     const c = room ? await roomCounts(db, pay.room_id) : null;
     if (room && c && c.free === 0 && room.status === 'open') await db.prepare("UPDATE rooms SET status='full' WHERE id=?1").bind(room.id).run();
+    /* پاداش کد معرف — بعد از قطعی شدن پرداخت ورودی */
+    await applyReferral(db, env, pay);
     let extra = '';
     if (room && room.room_id && room.room_pass) extra += `\n\n🆔 Room ID: <code>${esc(room.room_id)}</code>\n🔑 Password: <code>${esc(room.room_pass)}</code>`;
     notifyUser(db, env, pay.user_id, `✅ <b>پرداخت شما تایید شد!</b>\n\n🎮 روم: <b>${esc(room ? room.title : '')}</b>${extra}\n\nموفق باشی قهرمان! 🪖`);
@@ -341,6 +371,43 @@ async function approvePrize(db, env, prizeId, adminId) {
   return { ok: true };
 }
 
+/* ─────────────── سیستم کد معرف (رفرال) ───────────────
+   هر بازیکن یک کد اختصاصی دارد. هر نفر که هنگام ثبت‌نام در رومِ پولی، کد او را وارد کند
+   و پرداختش قطعی شود، «پاداش معرفی» (پیش‌فرض ۱۰,۰۰۰ تومان — قابل تغییر توسط ادمین)
+   به کیف پول صاحب کد اضافه می‌شود؛ با جمع شدن پاداش‌ها ورودیِ صاحب کد عملاً رایگان می‌شود. */
+function refCodeGen() { let s = ''; const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; for (let i = 0; i < 6; i++) s += c[Math.floor(Math.random() * c.length)]; return s; }
+async function ensureRefCode(db, u) {
+  if (!u) return '';
+  if (u.referral_code) return u.referral_code;
+  for (let i = 0; i < 6; i++) {
+    const c = refCodeGen();
+    try {
+      const r = await db.prepare("UPDATE users SET referral_code=?2 WHERE id=?1 AND (referral_code IS NULL OR referral_code='')").bind(u.id, c).run();
+      if (r.meta.changes) return c;
+      const ex = await db.prepare('SELECT referral_code FROM users WHERE id=?1').bind(u.id).first();
+      if (ex && ex.referral_code) return ex.referral_code;
+    } catch (e) { /* برخورد unique → کد بعدی */ }
+  }
+  return '';
+}
+async function refStatOf(db, userId) {
+  const r = await db.prepare('SELECT COUNT(*) c, COALESCE(SUM(amount),0) s FROM referral_uses WHERE owner_id=?1').bind(userId).first();
+  return { uses: num(r && r.c), earned: num(r && r.s) };
+}
+/* اعمال پاداش معرفی — بعد از قطعی شدن پرداخت ورودی صاحبِ کدِ استفاده‌شده */
+async function applyReferral(db, env, pay) {
+  try {
+    const ownerId = num(pay.ref_owner_id), amt = num(pay.ref_amount);
+    if (!ownerId || amt <= 0 || !num(pay.user_id)) return;
+    const o = await db.prepare('SELECT id, banned FROM users WHERE id=?1').bind(ownerId).first();
+    if (!o || o.banned) return;
+    await db.prepare('UPDATE users SET wallet = wallet + ?2 WHERE id=?1').bind(ownerId, amt).run();
+    await db.prepare("INSERT INTO referral_uses (code,owner_id,buyer_id,room_id,amount) VALUES(?1,?2,?3,?4,?5)").bind(String(pay.ref_code_used || ''), ownerId, num(pay.user_id), num(pay.room_id) || null, amt).run();
+    await db.prepare('INSERT INTO transactions (user_id,amount,kind,ref) VALUES(?1,?2,?3,?4)').bind(ownerId, amt, 'referral', 'PAY#' + num(pay.id)).run();
+    notifyUser(db, env, ownerId, `🎯 <b>کد معرف تو استفاده شد!</b>\n\n💰 <b>${money(amt)} تومان</b> به کیف پولت اضافه شد ✅\n(پرداخت ورودیِ طرفی که کد تو را زد، تایید شد)\n\n💡 با جمع شدن پاداش‌ها، ورودی روم‌های بعدی‌ات می‌تواند رایگان شود!`);
+  } catch (e) { /* هرگز جریان پرداخت را نشکن */ }
+}
+
 /* ─────────────── API: عمومی ─────────────── */
 async function apiPublicStats(db) {
   const u = await db.prepare('SELECT COUNT(*) c FROM users').first();
@@ -364,6 +431,9 @@ async function apiPublicConfig(db, env) {
     has_gateway: !!stg(st, 'gateway_url', ''),
     bale_bot: await botPublicLink(db, env, st, 'bale'),
     tg_bot: await botPublicLink(db, env, st, 'tg'),
+    tg_bot_id: await botPublicId(db, env, st, 'tg'),
+    bale_bot_id: await botPublicId(db, env, st, 'bale'),
+    referral_reward: num(stg(st, 'referral_reward', 10000)),
     modes: MODES
   });
 }
@@ -410,7 +480,9 @@ async function apiMe(db, req) {
     WHERE s.user_id=?1 ORDER BY s.id DESC LIMIT 50`).bind(u.id).all();
   const tx = await db.prepare('SELECT * FROM transactions WHERE user_id=?1 ORDER BY id DESC LIMIT 30').bind(u.id).all();
   const prizes = await db.prepare('SELECT * FROM prizes WHERE user_id=?1 ORDER BY id DESC LIMIT 20').bind(u.id).all();
-  return j({ ok: true, user: pubUser(u), entries: entries.results || [], transactions: tx.results || [], prizes: prizes.results || [] });
+  const refCode = await ensureRefCode(db, u);
+  const ref = await refStatOf(db, u.id);
+  return j({ ok: true, user: Object.assign(pubUser(u), { referral_code: refCode }), referral: ref, entries: entries.results || [], transactions: tx.results || [], prizes: prizes.results || [] });
 }
 async function apiMeUpdate(db, req) {
   const u = await authUser(db, req);
@@ -445,6 +517,9 @@ async function apiLink(db, env, req) {
     db.prepare('UPDATE payments SET user_id=?2 WHERE user_id=?1').bind(bot.id, u.id),
     db.prepare('UPDATE transactions SET user_id=?2 WHERE user_id=?1').bind(bot.id, u.id),
     db.prepare('UPDATE prizes SET user_id=?2 WHERE user_id=?1').bind(bot.id, u.id),
+    db.prepare('UPDATE referral_uses SET owner_id=?2 WHERE owner_id=?1').bind(bot.id, u.id),
+    db.prepare('UPDATE referral_uses SET buyer_id=?2 WHERE buyer_id=?1').bind(bot.id, u.id),
+    db.prepare('UPDATE payments SET ref_owner_id=?2 WHERE ref_owner_id=?1').bind(bot.id, u.id),
     db.prepare('DELETE FROM users WHERE id=?1').bind(bot.id)
   ]);
   await db.prepare("UPDATE users SET telegram_id=?2, bale_id=?3, wallet=wallet+?4, codm_id=COALESCE(NULLIF(codm_id,''),?5), display_name=COALESCE(NULLIF(display_name,''),?6) WHERE id=?1")
@@ -547,7 +622,7 @@ async function apiRoomJoin(db, env, req, id) {
   if (!u) return j({ ok: false, error: 'برای ثبت‌نام اول وارد شوید' }, 401);
   if (u.banned) return j({ ok: false, error: 'حساب شما مسدود است' }, 403);
   const b = await body(req);
-  const r = await joinCore(db, env, u, id, num(b.slot_no), String(b.method || ''));
+  const r = await joinCore(db, env, u, id, num(b.slot_no), String(b.method || ''), String(b.referral_code || ''));
   return j(r, r.ok ? 200 : 400);
 }
 async function checkRoomFull(db, roomId) {
@@ -697,7 +772,7 @@ async function apiUsers(db, req, url) {
   const u = await authUser(db, req);
   if (!u || u.role !== 'admin') return j({ ok: false, error: 'دسترسی ادمین لازم است' }, 403);
   const q = (url.searchParams.get('q') || '').trim();
-  let sql = `SELECT u.id, u.username, u.display_name, u.role, u.wallet, u.banned, u.telegram_id, u.bale_id, u.codm_id, u.created_at,
+  let sql = `SELECT u.id, u.username, u.display_name, u.role, u.wallet, u.banned, u.telegram_id, u.bale_id, u.codm_id, u.referral_code, u.created_at,
     (SELECT COUNT(*) FROM slots s WHERE s.user_id=u.id AND s.status='paid') entries FROM users u`;
   if (q) sql += ` WHERE LOWER(u.username) LIKE LOWER(?1) OR u.telegram_id=?1 OR u.bale_id=?1 OR CAST(u.id AS TEXT)=?1`;
   sql += ' ORDER BY u.id DESC LIMIT 100';
@@ -721,6 +796,21 @@ async function apiUserBan(db, req, id) {
   const b = await body(req);
   await db.prepare('UPDATE users SET banned=?2 WHERE id=?1').bind(id, b.banned ? 1 : 0).run();
   return j({ ok: true });
+}
+/* تغییر دستی کیف پول کاربر توسط ادمین — افزایش (+) یا کاهش (−) */
+async function apiUserWallet(db, env, req, id) {
+  const me = await authUser(db, req);
+  if (!me || me.role !== 'admin') return j({ ok: false, error: 'دسترسی ادمین لازم است' }, 403);
+  const b = await body(req);
+  const delta = num(b.delta);
+  if (!delta) return j({ ok: false, error: 'مبلغ تغییر باید عددی غیر از صفر باشد' }, 400);
+  const tu = await db.prepare('SELECT id, username, display_name, wallet FROM users WHERE id=?1').bind(id).first();
+  if (!tu) return j({ ok: false, error: 'کاربر یافت نشد' }, 404);
+  await db.prepare('UPDATE users SET wallet = wallet + ?2 WHERE id=?1').bind(id, delta).run();
+  await db.prepare('INSERT INTO transactions (user_id,amount,kind,ref) VALUES(?1,?2,?3,?4)').bind(id, delta, 'admin', String(b.note || ('ADM#' + me.id)).slice(0, 60)).run();
+  notifyUser(db, env, id, `${delta > 0 ? '💰 <b>کیف پولت افزایش یافت!</b>' : '⚠️ <b>کیف پولت کاهش یافت</b>'}\n\n${delta > 0 ? '➕' : '➖'} مبلغ: <b>${money(Math.abs(delta))} تومان</b>\n💼 موجودی جدید: <b>${money(num(tu.wallet) + delta)} تومان</b>\n\n${b.note ? '📝 ' + esc(String(b.note).slice(0, 120)) : 'توسط مدیریت پلتفرم'}`);
+  const nu = await db.prepare('SELECT wallet FROM users WHERE id=?1').bind(id).first();
+  return j({ ok: true, wallet: num(nu && nu.wallet) });
 }
 
 /* ─────────────── API: ادمین — آمار و تنظیمات ─────────────── */
@@ -822,13 +912,24 @@ async function apiWebhookSet(db, env, req, origin) {
     const t = tgToken(env, st);
     if (!t) return j({ ok: false, error: 'ابتدا توکن ربات تلگرام را در تنظیمات ثبت کن' }, 400);
     r = await botCall(TG_BASE, t, 'setWebhook', { url: `${origin}/tg/${secret}`, allowed_updates: ['message', 'callback_query'], drop_pending_updates: true });
+    if (r && r.ok) keep(botCall(TG_BASE, t, 'setMyCommands', { commands: BOT_COMMANDS }).catch(() => {}));
   } else if (platform === 'bale') {
     const t = baleToken(env, st);
     if (!t) return j({ ok: false, error: 'ابتدا توکن ربات بله را در تنظیمات ثبت کن' }, 400);
     r = await botCall(BL_BASE, t, 'setWebhook', { url: `${origin}/bale/${secret}` });
+    if (r && r.ok) keep(botCall(BL_BASE, t, 'setMyCommands', { commands: BOT_COMMANDS }).catch(() => {}));
   } else return j({ ok: false, error: 'پلتفرم نامعتبر' }, 400);
   return j({ ok: !!r.ok, error: r.ok ? null : (r.description || 'خطای ناشناخته'), result: r.result || null });
 }
+/* منوی دستورهای ربات — با هر اتصال وب‌هوک ثبت می‌شود (fix: دستور /link در منو و تایپ) */
+const BOT_COMMANDS = [
+  { command: 'start', description: '🚀 شروع و منوی اصلی' },
+  { command: 'help', description: '📖 راهنما' },
+  { command: 'link', description: '🔗 اتصال به حساب سایت' },
+  { command: 'mycode', description: '🎯 کد معرف من' },
+  { command: 'myid', description: '🆔 شناسه عددی من' },
+  { command: 'cancel', description: '❌ لغو عملیات جاری' }
+];
 async function announceNewRoom(db, env, roomId) {
   try {
     const room = await db.prepare('SELECT * FROM rooms WHERE id=?1').bind(roomId).first();
@@ -892,6 +993,7 @@ function mainKb(u, isAdmin) {
   const kb = [
     [{ text: '🎮 روم‌ها', callback_data: 'm:rooms' }, { text: '👤 حساب من', callback_data: 'm:acc' }],
     [{ text: '🏆 جوایز من', callback_data: 'm:prz' }, { text: '💵 شارژ کیف پول', callback_data: 'm:top' }],
+    [{ text: '🎯 کد معرف من', callback_data: 'm:ref' }],
     [{ text: 'ℹ️ راهنما', callback_data: 'm:help' }, { text: '🌐 وبسایت', callback_data: 'm:web' }]
   ];
   if (isAdmin) kb.push([{ text: '🛡 پنل مدیریت', callback_data: 'adm' }]);
@@ -905,6 +1007,9 @@ const HELP_TEXT = `🪖 <b>راهنمای کامل CODM Rooms</b>
 ۳. روش پرداخت را انتخاب کن (کیف پول / کارت / درگاه)
 ۴. بعد از تایید پرداخت، جایگاهت قطعی می‌شود
 
+🎯 <b>کد معرف (پاداش دعوت دوستان):</b>
+از «🎯 کد معرف من» کدت را بگیر و به دوستانت بده. هر دوست که موقع ثبت‌نام در رومِ پولی کد تو را وارد کند و پرداختش تایید شود، پاداش نقدی (پیش‌فرض ۱۰,۰۰۰ تومان — توسط مدیریت قابل تغییر) به کیف پولت اضافه می‌شود. با جمع شدن پاداش‌ها، ورودی روم‌های بعدی‌ات می‌تواند کاملاً رایگان شود!
+
 💰 <b>شارژ کیف پول:</b>
 مبلغ را انتخاب کن، پرداخت کن و عکس رسید را بفرست (کد پیگیری اختیاری است). بعد از تایید مدیریت، کیف پولت شارژ می‌شود.
 
@@ -917,6 +1022,10 @@ const HELP_TEXT = `🪖 <b>راهنمای کامل CODM Rooms</b>
 🏆 <b>جوایز:</b>
 جوایز برنده‌ها توسط مدیریت تایید و مستقیماً به کیف پول اضافه می‌شود.
 
+⌨️ <b>دستورها:</b>
+/start منوی اصلی • /help راهنما • /link اتصال به سایت
+/mycode کد معرف • /myid شناسه عددی • /cancel لغو
+
 ⚠️ <b>قوانین:</b>
 • بعد از شروع روم، انصراف امکان‌پذیر نیست
 • تقلب = حذف دائمی و عدم بازگشت وجه
@@ -928,7 +1037,9 @@ const HELP_TEXT = `🪖 <b>راهنمای کامل CODM Rooms</b>
 async function showMain(db, env, p, chatId, u) {
   const st = await getSettings(db);
   const site = stg(st, 'website_url', '');
+  const bid = await botPublicId(db, env, st, p);
   let t = `${u.role === 'admin' ? '🛡' : '🪖'} <b>سلام ${esc(u.display_name || u.username)}!</b>\n\n${esc(stg(st, 'welcome', 'به پلتفرم روم‌های کالاف دیوتی موبایل خوش آمدی!'))}\n\n💰 موجودی: <b>${money(u.wallet)} تومان</b>`;
+  if (bid) t += `\n🤖 آیدی این ربات: @${esc(bid)}`;
   await sendBot(bBase(p), bToken(env, st, p), chatId, t, mainKb(u, u.role === 'admin'));
 }
 async function showRoomsListBot(db, env, p, chatId, msgId, page, admin) {
@@ -982,13 +1093,19 @@ async function joinMethodKb(db, env, p, chatId, msgId, roomId, slotNo, u) {
   if (!room) return;
   const st = await getSettings(db);
   const fee = num(room.entry_fee);
+  const sRef = await getBState(db, p, chatId);
+  const hasRef = !!(sRef && sRef.data && sRef.data.refcode && num(sRef.data.roomId) === num(roomId) && num(sRef.data.slotNo) === num(slotNo));
+  const rw = num(stg(st, 'referral_reward', 10000));
   let t;
   const kb = [];
   if (fee === 0) {
     t = `🎮 <b>${esc(room.title)}</b>\n\n🎯 موقعیت ${faNum(slotNo)} — این روم <b>رایگان</b> است!\n\nبرای ثبت‌نام دکمه زیر را بزن:`;
     kb.push([{ text: '✅ ثبت‌نام رایگان', callback_data: `jf:${roomId}:${slotNo}` }]);
   } else {
-    t = `🎮 <b>${esc(room.title)}</b>\n\n🎯 موقعیت ${faNum(slotNo)}\n💰 ورودی: <b>${money(fee)} تومان</b>\n👤 موجودی کیف پولت: ${money(u.wallet)} تومان\n\nروش پرداخت را انتخاب کن:`;
+    t = `🎮 <b>${esc(room.title)}</b>\n\n🎯 موقعیت ${faNum(slotNo)}\n💰 ورودی: <b>${money(fee)} تومان</b>\n👤 موجودی کیف پولت: ${money(u.wallet)} تومان\n`;
+    if (hasRef) t += `🎯 کد معرف: <b>${esc(sRef.data.refcode)}</b> ✅ (${esc(sRef.data.refname || 'دوستت')} بعد از تایید، ${money(rw)} ت می‌گیرد)\n`;
+    t += `\nروش پرداخت را انتخاب کن:`;
+    kb.push([{ text: hasRef ? '🔄 تغییر کد معرف' : '🎯 کد معرف دارم', callback_data: `jr:${roomId}:${slotNo}` }]);
     kb.push([{ text: `💰 پرداخت از کیف پول (${money(fee)} ت)`, callback_data: `jw:${roomId}:${slotNo}` }]);
     if (stg(st, 'card_number', '')) kb.push([{ text: '💳 کارت به کارت', callback_data: `jc:${roomId}:${slotNo}` }]);
     if (stg(st, 'gateway_url', '')) kb.push([{ text: '🏦 پرداخت آنلاین', callback_data: `jo:${roomId}:${slotNo}` }]);
@@ -998,7 +1115,9 @@ async function joinMethodKb(db, env, p, chatId, msgId, roomId, slotNo, u) {
 }
 async function showAccount(db, env, p, chatId, msgId, u) {
   const entries = await db.prepare(`SELECT s.slot_no, s.team_label, s.status, r.id rid, r.title, r.status rstatus FROM slots s JOIN rooms r ON r.id=s.room_id WHERE s.user_id=?1 AND s.status IN ('pending','paid') ORDER BY s.id DESC LIMIT 15`).bind(u.id).all();
-  let t = `👤 <b>حساب من</b>\n━━━━━━━━━━━━━━━━━━\n🆔 شناسه: <code>${u.id}</code>\n📛 نام کاربری: <code>${esc(u.username)}</code>\n💰 موجودی: <b>${money(u.wallet)} تومان</b>\n🎮 حالت: ${u.telegram_id && u.bale_id ? 'ربات تلگرام + بله' : (u.telegram_id ? 'تلگرام' : 'بله')}\n🌐 سایت: ${u.password_hash ? '✅ رمز تنظیم شده' : '❌ رمز سایت تنظیم نشده'}\n`;
+  const refCode = await ensureRefCode(db, u);
+  const ref = await refStatOf(db, u.id);
+  let t = `👤 <b>حساب من</b>\n━━━━━━━━━━━━━━━━━━\n🆔 شناسه: <code>${u.id}</code>\n📛 نام کاربری: <code>${esc(u.username)}</code>\n💰 موجودی: <b>${money(u.wallet)} تومان</b>\n🎯 کد معرف: <code>${esc(refCode)}</code> (${faNum(ref.uses)} دعوت • ${money(ref.earned)} ت درآمد)\n🎮 حالت: ${u.telegram_id && u.bale_id ? 'ربات تلگرام + بله' : (u.telegram_id ? 'تلگرام' : 'بله')}\n🌐 سایت: ${u.password_hash ? '✅ رمز تنظیم شده' : '❌ رمز سایت تنظیم نشده'}\n`;
   const list = entries.results || [];
   if (list.length) {
     t += `\n🎮 <b>روم‌های من:</b>\n`;
@@ -1007,7 +1126,8 @@ async function showAccount(db, env, p, chatId, msgId, u) {
   const kb = [];
   for (const e of list) if (e.rstatus === 'open') kb.push([{ text: `↩️ لغو ثبت‌نام ${e.title.slice(0, 22)}`, callback_data: `myc:${e.rid}` }]);
   kb.push([{ text: '💵 شارژ کیف پول', callback_data: 'm:top' }, { text: '🏆 جوایز من', callback_data: 'm:prz' }]);
-  kb.push([{ text: '🔗 اتصال به سایت', callback_data: 'm:link' }, { text: '🔑 رمز سایت', callback_data: 'm:pass' }]);
+  kb.push([{ text: '🎯 کد معرف من', callback_data: 'm:ref' }, { text: '🔗 اتصال به سایت', callback_data: 'm:link' }]);
+  kb.push([{ text: '🔑 رمز سایت', callback_data: 'm:pass' }]);
   kb.push([{ text: '🔙 منوی اصلی', callback_data: 'm:main' }]);
   await editOrSend(db, env, p, chatId, msgId, t, kb);
 }
@@ -1034,10 +1154,12 @@ async function showTopupMenu(db, env, p, chatId, msgId, u) {
 async function showHelp(db, env, p, chatId, msgId, u) {
   const st = await getSettings(db);
   const sup = stg(st, 'support_bot', '');
-  const kb = [[{ text: '🎮 روم‌ها', callback_data: 'm:rooms' }]];
+  const bid = await botPublicId(db, env, st, p);
+  const t = HELP_TEXT + (bid ? `\n\n🤖 آیدی این ربات: @${esc(bid)}` : '');
+  const kb = [[{ text: '🎯 کد معرف من', callback_data: 'm:ref' }, { text: '🎮 روم‌ها', callback_data: 'm:rooms' }]];
   if (sup) kb.push([{ text: '🛡 پشتیبانی', url: sup }]);
   kb.push([{ text: '🔙 منوی اصلی', callback_data: 'm:main' }]);
-  await editOrSend(db, env, p, chatId, msgId, HELP_TEXT, kb);
+  await editOrSend(db, env, p, chatId, msgId, t, kb);
 }
 async function showWeb(db, env, p, chatId, msgId) {
   const st = await getSettings(db);
@@ -1070,6 +1192,17 @@ async function showLinkCode(db, env, p, chatId, msgId, u) {
   const t = `🔗 <b>اتصال اکانت ربات به سایت</b>\n━━━━━━━━━━━━━━━━━━\n۱. وارد سایت شو و وارد حسابت شو\n۲. به بخش «پروفایل» برو\n۳. این کد را در قسمت «اتصال ${p === 'tg' ? 'تلگرام' : 'بله'}» وارد کن:\n\n🔑 <code>${code}</code>\n\n⏰ این کد ۱۵ دقیقه اعتبار دارد.\nبا اتصال، موجودی و اطلاعات شما در سایت و ربات یکی می‌شود. ✅`;
   await editOrSend(db, env, p, chatId, msgId, t, [[{ text: '🔙 حساب من', callback_data: 'm:acc' }]]);
 }
+/* کد معرف من — کد اختصاصی + آمار دعوت */
+async function showMyCode(db, env, p, chatId, msgId, u) {
+  const st = await getSettings(db);
+  const code = await ensureRefCode(db, u);
+  const ref = await refStatOf(db, u.id);
+  const rw = num(stg(st, 'referral_reward', 10000));
+  const site = stg(st, 'website_url', '');
+  let t = `🎯 <b>کد معرف من</b>\n━━━━━━━━━━━━━━━━━━\n🔑 کد اختصاصی تو:\n<b><code>${esc(code)}</code></b>\n\n👥 دعوت موفق: <b>${faNum(ref.uses)}</b> نفر\n💰 درآمد از معرفی: <b>${money(ref.earned)} تومان</b>\n🎁 به‌ازای هر دوستی که هنگام ثبت‌نام در رومِ پولی کد تو را وارد کند و پرداختش تایید شود، <b>${money(rw)} تومان</b> به کیف پولت اضافه می‌شود.\n\n📌 کدت را برای دوستانت بفرست تا موقع ثبت‌نام، آن را در قسمت «کد معرف» وارد کنند.`;
+  if (site) t += `\n\n🌐 ${site}`;
+  await editOrSend(db, env, p, chatId, msgId, t, [[{ text: '🔙 حساب من', callback_data: 'm:acc' }, { text: '🔙 منوی اصلی', callback_data: 'm:main' }]]);
+}
 async function editOrSend(db, env, p, chatId, msgId, text, kb) {
   if (msgId) {
     const r = await editBot(bBase(p), bToken(env, await getSettings(db), p), chatId, msgId, text, kb);
@@ -1078,8 +1211,9 @@ async function editOrSend(db, env, p, chatId, msgId, text, kb) {
   sendBot(bBase(p), bToken(env, await getSettings(db), p), chatId, text, kb);
 }
 
-/* ─────────────── هسته عضویت (مشترک سایت + ربات‌ها) ─────────────── */
-async function joinCore(db, env, u, roomId, slotNo, method) {
+/* ─────────────── هسته عضویت (مشترک سایت + ربات‌ها) ───────────────
+   refCode = کد معرف اختیاری — پاداش فقط برای روم‌های پولی و بعد از قطعی پرداخت اعمال می‌شود */
+async function joinCore(db, env, u, roomId, slotNo, method, refCode) {
   const room = await db.prepare('SELECT * FROM rooms WHERE id=?1').bind(roomId).first();
   if (!room) return { ok: false, error: 'روم یافت نشد' };
   if (room.status !== 'open') return { ok: false, error: 'این روم در وضعیت فعلی قابل ثبت‌نام نیست' };
@@ -1094,6 +1228,20 @@ async function joinCore(db, env, u, roomId, slotNo, method) {
   if (fee > 0 && !['wallet', 'card', 'online'].includes(method)) return { ok: false, error: 'روش پرداخت نامعتبر' };
   if (method === 'card' && !stg(st, 'card_number', '')) return { ok: false, error: 'پرداخت کارت‌به‌کارت فعلاً فعال نیست' };
   if (method === 'online' && !stg(st, 'gateway_url', '')) return { ok: false, error: 'درگاه پرداخت فعلاً فعال نیست' };
+  /* اعتبارسنجی کد معرف — فقط برای روم‌های پولی */
+  const rc = String(refCode || '').trim().toUpperCase().slice(0, 20);
+  let refOwner = null, refAmt = 0;
+  if (rc && fee > 0) {
+    refOwner = await db.prepare('SELECT id, display_name, username, banned FROM users WHERE referral_code=?1').bind(rc).first();
+    if (!refOwner) return { ok: false, error: 'کد معرف نامعتبر است — کد را چک کن یا خالی بگذار' };
+    if (refOwner.banned) return { ok: false, error: 'صاحب این کد معرف مسدود است' };
+    if (num(refOwner.id) === num(u.id)) return { ok: false, error: 'نمی‌توانی از کد معرف خودت استفاده کنی' };
+    refAmt = num(stg(st, 'referral_reward', 10000));
+    if (refAmt <= 0) { refOwner = null; refAmt = 0; }
+  }
+  const refCols = ', ref_owner_id, ref_amount, ref_code_used';
+  const refVals = refOwner ? ", ?6, ?7, ?8" : ", NULL, NULL, NULL";
+  const refBinds = refOwner ? [num(refOwner.id), refAmt, rc] : [];
   if (method === 'free') {
     const upd = await db.prepare("UPDATE slots SET status='paid', user_id=?2 WHERE id=?1 AND status='free'").bind(slot.id, u.id).run();
     if (!upd.meta.changes) return { ok: false, error: 'موقعیت لحظاتی پیش رزرو شد' };
@@ -1108,21 +1256,24 @@ async function joinCore(db, env, u, roomId, slotNo, method) {
     const upd = await db.prepare("UPDATE slots SET status='paid', user_id=?2 WHERE id=?1 AND status='free'").bind(slot.id, u.id).run();
     if (!upd.meta.changes) return { ok: false, error: 'موقعیت لحظاتی پیش رزرو شد' };
     await db.prepare('UPDATE users SET wallet = wallet - ?2 WHERE id=?1').bind(u.id, fee).run();
-    const pr = await db.prepare("INSERT INTO payments (user_id,room_id,slot_id,amount,method,status,kind) VALUES(?1,?2,?3,?4,'wallet','approved','entry')").bind(u.id, roomId, slot.id, fee).run();
+    const pr = await db.prepare("INSERT INTO payments (user_id,room_id,slot_id,amount,method,status,kind" + refCols + ") VALUES(?1,?2,?3,?4,'wallet','approved','entry'" + refVals + ")").bind(u.id, roomId, slot.id, fee, ...refBinds).run();
     await db.prepare('INSERT INTO transactions (user_id,amount,kind,ref) VALUES(?1,?2,?3,?4)').bind(u.id, -fee, 'entry', 'ROOM#' + roomId).run();
     await db.prepare('UPDATE slots SET payment_id=?2 WHERE id=?1').bind(slot.id, pr.meta.last_row_id).run();
     await checkRoomFull(db, roomId);
+    if (refOwner) await applyReferral(db, env, { id: pr.meta.last_row_id, user_id: u.id, room_id: roomId, ref_owner_id: num(refOwner.id), ref_amount: refAmt, ref_code_used: rc });
     let extra = '';
     if (room.room_id && room.room_pass) extra += `\n\n🆔 Room ID: <code>${esc(room.room_id)}</code>\n🔑 Password: <code>${esc(room.room_pass)}</code>`;
-    notifyUser(db, env, u.id, `🎮 <b>ثبت‌نام انجام شد!</b>\n\nروم: <b>${esc(room.title)}</b>\nموقعیت: ${esc(slot.team_label)} / ${faNum(slotNo)}\n💳 پرداخت از کیف پول: ${money(fee)} تومان${extra}\n\nموفق باشی قهرمان! 🔥`);
+    const refNote = refOwner ? `\n🎯 کد معرف ${esc(refOwner.display_name || refOwner.username)} ثبت شد — پاداش به کیف پول او واریز گردید.` : '';
+    notifyUser(db, env, u.id, `🎮 <b>ثبت‌نام انجام شد!</b>\n\nروم: <b>${esc(room.title)}</b>\nموقعیت: ${esc(slot.team_label)} / ${faNum(slotNo)}\n💳 پرداخت از کیف پول: ${money(fee)} تومان${refNote}${extra}\n\nموفق باشی قهرمان! 🔥`);
     return { ok: true, status: 'paid', message: 'ثبت‌نام با موفقیت انجام شد!' };
   }
   const upd = await db.prepare("UPDATE slots SET status='pending', user_id=?2 WHERE id=?1 AND status='free'").bind(slot.id, u.id).run();
   if (!upd.meta.changes) return { ok: false, error: 'موقعیت لحظاتی پیش رزرو شد' };
-  const pr = await db.prepare("INSERT INTO payments (user_id,room_id,slot_id,amount,method,status,kind) VALUES(?1,?2,?3,?4,?5,'pending','entry')").bind(u.id, roomId, slot.id, fee, method).run();
+  const pr = await db.prepare("INSERT INTO payments (user_id,room_id,slot_id,amount,method,status,kind" + refCols + ") VALUES(?1,?2,?3,?4,?5,'pending','entry'" + refVals + ")").bind(u.id, roomId, slot.id, fee, method, ...refBinds).run();
   await db.prepare('UPDATE slots SET payment_id=?2 WHERE id=?1').bind(slot.id, pr.meta.last_row_id).run();
-  notifyAdmins(db, env, `🔔 <b>درخواست ثبت‌نام جدید</b>\n\n👤 ${esc(u.display_name || u.username)}\n🎮 روم: ${esc(room.title)}\n💰 مبلغ: ${money(fee)} تومان\nروش: ${method === 'card' ? 'کارت‌به‌کارت' : 'درگاه'}`);
+  notifyAdmins(db, env, `🔔 <b>درخواست ثبت‌نام جدید</b>\n\n👤 ${esc(u.display_name || u.username)}\n🎮 روم: ${esc(room.title)}\n💰 مبلغ: ${money(fee)} تومان\nروش: ${method === 'card' ? 'کارت‌به‌کارت' : 'درگاه'}${refOwner ? '\n🎯 کد معرف: <code>' + esc(rc) + '</code> (پس از تایید، پاداش داده شود)' : ''}`);
   const resp = { ok: true, status: 'pending', payment_id: pr.meta.last_row_id, fee, message: 'موقعیت شما موقتاً رزرو شد. پس از تایید پرداخت، قطعی می‌شود.' };
+  if (refOwner) resp.referral = { code: rc, owner: refOwner.display_name || refOwner.username, reward: refAmt };
   if (method === 'card') resp.card = { number: stg(st, 'card_number', ''), name: stg(st, 'card_name', ''), bank: stg(st, 'bank_name', '') };
   if (method === 'online') resp.gateway_url = String(stg(st, 'gateway_url', '')).replace('{amount}', String(fee)).replace('{desc}', encodeURIComponent('Room#' + roomId));
   return resp;
@@ -1251,11 +1402,11 @@ async function admUserCard(db, env, p, chatId, msgId, uid) {
   const x = await db.prepare('SELECT * FROM users WHERE id=?1').bind(uid).first();
   if (!x) return;
   const ent = await db.prepare("SELECT COUNT(*) c FROM slots WHERE user_id=?1 AND status='paid'").bind(uid).first();
-  const t = `👤 <b>کاربر #${faNum(x.id)}</b>\n━━━━━━━━━━━━━━━━━━\n📛 ${esc(x.display_name || '')} (@${esc(x.username)})\n💰 موجودی: <b>${money(x.wallet)} تومان</b>\n🎮 ورودی‌ها: ${faNum(ent.c)}\n📱 تلگرام: ${x.telegram_id ? esc(x.telegram_id) : '—'}\n💬 بله: ${x.bale_id ? esc(x.bale_id) : '—'}\n🎮 آیدی کالاف: ${esc(x.codm_id || '—')}\n🗓 عضویت: ${esc(x.created_at)}\nوضعیت: ${x.banned ? '⛔️ مسدود' : '✅ فعال'} | نقش: ${x.role === 'admin' ? '🛡 ادمین' : '👤 کاربر'}`;
+  const t = `👤 <b>کاربر #${faNum(x.id)}</b>\n━━━━━━━━━━━━━━━━━━\n📛 ${esc(x.display_name || '')} (@${esc(x.username)})\n💰 موجودی: <b>${money(x.wallet)} تومان</b>\n🎯 کد معرف: <code>${esc(x.referral_code || '—')}</code>\n🎮 ورودی‌ها: ${faNum(ent.c)}\n📱 تلگرام: ${x.telegram_id ? esc(x.telegram_id) : '—'}\n💬 بله: ${x.bale_id ? esc(x.bale_id) : '—'}\n🎮 آیدی کالاف: ${esc(x.codm_id || '—')}\n🗓 عضویت: ${esc(x.created_at)}\nوضعیت: ${x.banned ? '⛔️ مسدود' : '✅ فعال'} | نقش: ${x.role === 'admin' ? '🛡 ادمین' : '👤 کاربر'}`;
   const kb = [
     [{ text: x.role === 'admin' ? '👤 برداشتن ادمین' : '🛡 ادمین کن', callback_data: `adm:mk:${x.id}` }],
     [{ text: x.banned ? '✅ رفع مسدودی' : '⛔️ مسدودسازی', callback_data: `adm:ban:${x.id}` }],
-    [{ text: '🏆 دادن جایزه', callback_data: `adm:przu:${x.id}` }],
+    [{ text: '🏆 دادن جایزه', callback_data: `adm:przu:${x.id}` }, { text: '💰 تغییر کیف پول', callback_data: `adm:wal:${x.id}` }],
     [{ text: '🔙 کاربران', callback_data: 'adm:users:p0' }]
   ];
   await editOrSend(db, env, p, chatId, msgId, t, kb);
@@ -1263,18 +1414,22 @@ async function admUserCard(db, env, p, chatId, msgId, uid) {
 async function admSettingsView(db, env, p, chatId, msgId) {
   const st = await getSettings(db);
   const mask = (v) => v ? (String(v).length > 12 ? String(v).slice(0, 6) + '•••' + String(v).slice(-4) : String(v)) : '—';
-  const t = `⚙️ <b>تنظیمات</b>\n━━━━━━━━━━━━━━━━━━\n🤖 توکن تلگرام: ${mask(st.tg_token)}\n🤖 توکن بله: ${mask(st.bale_token)}\n💳 کارت: ${stg(st, 'card_number', '') || '—'}\n🏦 درگاه: ${stg(st, 'gateway_url', '') || '—'}\n🌐 سایت: ${stg(st, 'website_url', '') || '—'}\n📣 کانال اعلان: ${stg(st, 'announce_channel', '') || '—'}\n⬇️ حداقل شارژ: ${money(stg(st, 'min_topup', 50000))} تومان\n\nبرای تغییر، روی هر مورد بزن:`;
+  const idTg = stg(st, 'tg_bot_id', '') || stg(st, 'tg_username', '') || '—';
+  const idBl = stg(st, 'bale_bot_id', '') || stg(st, 'bale_username', '') || '—';
+  const t = `⚙️ <b>تنظیمات</b>\n━━━━━━━━━━━━━━━━━━\n🤖 توکن تلگرام: ${mask(st.tg_token)}\n🤖 توکن بله: ${mask(st.bale_token)}\n📱 آیدی تلگرام: @${esc(idTg)}\n💬 آیدی بله: @${esc(idBl)}\n💳 کارت: ${stg(st, 'card_number', '') || '—'}\n🏦 درگاه: ${stg(st, 'gateway_url', '') || '—'}\n🌐 سایت: ${stg(st, 'website_url', '') || '—'}\n📣 کانال اعلان: ${stg(st, 'announce_channel', '') || '—'}\n⬇️ حداقل شارژ: ${money(stg(st, 'min_topup', 50000))} تومان\n🎯 پاداش کد معرف: ${money(stg(st, 'referral_reward', 10000))} تومان\n\nبرای تغییر، روی هر مورد بزن:`;
   const kb = [
     [{ text: '🤖 توکن تلگرام', callback_data: 'set:tg_token' }, { text: '🤖 توکن بله', callback_data: 'set:bale_token' }],
+    [{ text: '📱 آیدی ربات تلگرام', callback_data: 'set:tg_bot_id' }, { text: '💬 آیدی ربات بله', callback_data: 'set:bale_bot_id' }],
     [{ text: '💳 شماره کارت', callback_data: 'set:card_number' }, { text: '👤 نام صاحب کارت', callback_data: 'set:card_name' }],
     [{ text: '🏦 درگاه پرداخت', callback_data: 'set:gateway_url' }, { text: '🌐 آدرس سایت', callback_data: 'set:website_url' }],
     [{ text: '📣 کانال اعلان روم', callback_data: 'set:announce_channel' }, { text: '⬇️ حداقل شارژ', callback_data: 'set:min_topup' }],
-    [{ text: '🛡 بات پشتیبانی', callback_data: 'set:support_bot' }, { text: '🛒 بات فروشگاه', callback_data: 'set:shop_bot' }],
+    [{ text: '🎯 پاداش کد معرف', callback_data: 'set:referral_reward' }, { text: '🛡 بات پشتیبانی', callback_data: 'set:support_bot' }],
+    [{ text: '💬 لینک ربات بله', callback_data: 'set:bale_bot_link' }, { text: '📱 لینک ربات تلگرام', callback_data: 'set:tg_bot_link' }],
     [{ text: '🔙 پنل', callback_data: 'adm' }]
   ];
   await editOrSend(db, env, p, chatId, msgId, t, kb);
 }
-const SET_LABELS = { tg_token: 'توکن ربات تلگرام', bale_token: 'توکن ربات بله', card_number: 'شماره کارت', card_name: 'نام صاحب کارت', bank_name: 'نام بانک', gateway_url: 'آدرس درگاه (شامل {amount})', website_url: 'آدرس وبسایت', announce_channel: 'آیدی/آیدی عددی کانال اعلان', min_topup: 'حداقل شارژ (تومان)', support_bot: 'لینک بات پشتیبانی', shop_bot: 'لینک بات فروشگاه', offers_site: 'سایت پیشنهادات', offers_page: 'صفحه پیشنهادات', channel_link: 'لینک کانال', welcome: 'متن خوش‌آمد' };
+const SET_LABELS = { tg_token: 'توکن ربات تلگرام', bale_token: 'توکن ربات بله', card_number: 'شماره کارت', card_name: 'نام صاحب کارت', bank_name: 'نام بانک', gateway_url: 'آدرس درگاه (شامل {amount})', website_url: 'آدرس وبسایت', announce_channel: 'آیدی/آیدی عددی کانال اعلان', min_topup: 'حداقل شارژ (تومان)', support_bot: 'لینک بات پشتیبانی', shop_bot: 'لینک بات فروشگاه', offers_site: 'سایت پیشنهادات', offers_page: 'صفحه پیشنهادات', channel_link: 'لینک کانال', welcome: 'متن خوش‌آمد', tg_bot_id: 'آیدی ربات تلگرام (بدون @ — مثل codm_room_bot)', bale_bot_id: 'آیدی ربات بله (بدون @ — مثل codm_room_bot)', referral_reward: 'پاداش کد معرف به تومان (مثل 10000)', bale_bot_link: 'لینک کامل ربات بله (اختیاری)', tg_bot_link: 'لینک کامل ربات تلگرام (اختیاری)' };
 
 /* ─────────────── هسته انصراف از روم (مشترک) ─────────────── */
 async function leaveCore(db, env, u, roomId) {
@@ -1326,6 +1481,7 @@ async function cbDispatch(db, env, p, cb, ans, st0) {
   if (data === 'm:help') return showHelp(db, env, p, chatId, msgId, user);
   if (data === 'm:web') return showWeb(db, env, p, chatId, msgId);
   if (data === 'm:link') return showLinkCode(db, env, p, chatId, msgId, user);
+  if (data === 'm:ref') return showMyCode(db, env, p, chatId, msgId, user);
   if (data === 'm:pass') { await setBState(db, p, chatId, { flow: 'pass', data: {} }); return editOrSend(db, env, p, chatId, msgId, `🔑 <b>تنظیم رمز ورود به سایت</b>\n\nیک رمز عبور (حداقل ۴ کاراکتر) بفرست تا با آن بتوانی با نام کاربری <code>${esc(user.username)}</code> وارد سایت شوی.\n\nبرای لغو /cancel را بزن.`, [[{ text: '❌ لغو', callback_data: 'm:acc' }]]); }
   if (data.startsWith('rm:')) return showRoomBot(db, env, p, chatId, msgId, num(data.slice(3)), user);
   if (data.startsWith('sl:')) {
@@ -1338,14 +1494,21 @@ async function cbDispatch(db, env, p, cb, ans, st0) {
   }
   if (data.startsWith('jf:') || data.startsWith('jw:')) {
     const [act, ridS, snS] = data.split(':');
-    const r = await joinCore(db, env, user, num(ridS), num(snS), act === 'jf' ? 'free' : 'wallet');
+    const stRef = await getBState(db, p, chatId);
+    const refOk = stRef && stRef.data && stRef.data.refcode && num(stRef.data.roomId) === num(ridS) && num(stRef.data.slotNo) === num(snS);
+    const refc = refOk ? stRef.data.refcode : '';
+    const r = await joinCore(db, env, user, num(ridS), num(snS), act === 'jf' ? 'free' : 'wallet', refc);
+    await setBState(db, p, chatId, null);
     if (!r.ok) return editOrSend(db, env, p, chatId, msgId, `❌ ${r.error}`, r.need === 'topup' ? [[{ text: '💵 شارژ کیف پول', callback_data: 'm:top' }], [{ text: '🔙 بازگشت', callback_data: `rm:${ridS}` }]] : [[{ text: '🔙 بازگشت', callback_data: `rm:${ridS}` }]]);
     return showRoomBot(db, env, p, chatId, msgId, num(ridS), user);
   }
   if (data.startsWith('jc:') || data.startsWith('jo:')) {
     const [act, ridS, snS] = data.split(':');
-    const r = await joinCore(db, env, user, num(ridS), num(snS), act === 'jc' ? 'card' : 'online');
-    if (!r.ok) return editOrSend(db, env, p, chatId, msgId, `❌ ${r.error}`, [[{ text: '🔙 بازگشت', callback_data: `rm:${ridS}` }]]);
+    const stRef = await getBState(db, p, chatId);
+    const refOk = stRef && stRef.data && stRef.data.refcode && num(stRef.data.roomId) === num(ridS) && num(stRef.data.slotNo) === num(snS);
+    const refc = refOk ? stRef.data.refcode : '';
+    const r = await joinCore(db, env, user, num(ridS), num(snS), act === 'jc' ? 'card' : 'online', refc);
+    if (!r.ok) { await setBState(db, p, chatId, null); return editOrSend(db, env, p, chatId, msgId, `❌ ${r.error}`, [[{ text: '🔙 بازگشت', callback_data: `rm:${ridS}` }]]); }
     await setBState(db, p, chatId, { flow: 'receipt', data: { payment_id: r.payment_id, room: num(ridS) } });
     const kb = [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${ridS}` }]];
     if (act === 'jc') {
@@ -1367,6 +1530,18 @@ async function cbDispatch(db, env, p, cb, ans, st0) {
     await setBState(db, p, chatId, { flow: 'topamount', data: { method } });
     const minT = num(stg(await getSettings(db), 'min_topup', 50000));
     return editOrSend(db, env, p, chatId, msgId, `💵 <b>شارژ کیف پول</b> (${method === 'card' ? 'کارت به کارت' : 'پرداخت آنلاین'})\n\n💰 مبلغ موردنظرت را بفرست (تومان).\n⬇️ حداقل: <b>${money(minT)} تومان</b>\n\nبرای لغو /cancel را بزن.`, [[{ text: '❌ لغو', callback_data: 'm:top' }]]);
+  }
+  /* ── کد معرف — وارد کردن کد قبل از انتخاب روش پرداخت ── */
+  if (data.startsWith('jr:')) {
+    const [, ridS, snS] = data.split(':');
+    const rw = num(stg(st0, 'referral_reward', 10000));
+    await setBState(db, p, chatId, { flow: 'refjoin', data: { roomId: num(ridS), slotNo: num(snS) } });
+    return editOrSend(db, env, p, chatId, msgId, `🎯 <b>کد معرف</b>\n━━━━━━━━━━━━━━━━━━\nکد معرفِ دوستت را بفرست تا پس از قطعی‌شدن پرداختت، <b>${money(rw)} تومان</b> به کیف پول او اضافه شود.\n\n🔑 کد را همین‌جا بفرست (یا /skip برای رد کردن):`, [[{ text: '⏭ بدون کد معرف', callback_data: `jrskip:${ridS}:${snS}` }], [{ text: '🔙 بازگشت', callback_data: `rm:${ridS}` }]]);
+  }
+  if (data.startsWith('jrskip:')) {
+    const [, ridS, snS] = data.split(':');
+    await setBState(db, p, chatId, { flow: 'refset', data: { roomId: num(ridS), slotNo: num(snS), refcode: '', refname: '' } });
+    return joinMethodKb(db, env, p, chatId, msgId, num(ridS), num(snS), user);
   }
   /* ── ادمین ── */
   if (!isAdmin) return;
@@ -1393,6 +1568,13 @@ async function cbDispatch(db, env, p, cb, ans, st0) {
     if (!tu) return;
     await db.prepare('UPDATE users SET banned=?2 WHERE id=?1').bind(uid, tu.banned ? 0 : 1).run();
     return admUserCard(db, env, p, chatId, msgId, uid);
+  }
+  if (data.startsWith('adm:wal:')) {
+    const uid = num(data.slice(8));
+    const tu = await db.prepare('SELECT id, username, display_name, wallet FROM users WHERE id=?1').bind(uid).first();
+    if (!tu) return;
+    await setBState(db, p, chatId, { flow: 'wal', data: { userId: uid, name: tu.display_name || tu.username, old: num(tu.wallet) } });
+    return editOrSend(db, env, p, chatId, msgId, `💰 <b>تغییر کیف پول ${esc(tu.display_name || tu.username)}</b>\n━━━━━━━━━━━━━━━━━━\n💼 موجودی فعلی: <b>${money(num(tu.wallet))} تومان</b>\n\nمبلغ تغییر را بفرست:\n➕ افزایش: <code>50000</code>\n➖ کاهش: <code>-50000</code>\n(اعداد فارسی هم قبول است)`, [[{ text: '❌ لغو', callback_data: `adm:u:${uid}` }]]);
   }
   if (data === 'adm:new') { await setBState(db, p, chatId, { flow: 'nr', step: 1, data: {} }); return editOrSend(db, env, p, chatId, msgId, `➕ <b>ساخت روم جدید</b> (۱/۹)\n\n📝 <b>عنوان روم را بفرست</b>\nمثال: <code>جام قهرمانان شبانه — فینال</code>\n\nبرای لغو /cancel را بزن.`, [[{ text: '❌ لغو', callback_data: 'adm' }]]); }
   if (data.startsWith('nrmode:')) {
@@ -1596,10 +1778,13 @@ async function handleBotMessage(db, env, p, msg) {
     if (text === '/start') await sendBot(bBase(p), bToken(env, st0, p), chatId, '⛔️ دسترسی شما توسط مدیریت مسدود شده است.');
     return;
   }
-  /* دستورها — /start با پیلود درگاه پرداخت: /start pay_<paymentId> */
-  const startPay = text.match(/^\/start(@\S+)?\s+pay_(\d+)\s*$/i);
-  if (text === '/start' || startPay) {
-    if (startPay) return handlePayBridge(db, env, p, chatId, user, num(startPay[2]));
+  /* دستورها — پشتیبانی کامل از /cmd و /cmd@BotName (منوی فرمان کلاینت‌ها پسوند @username اضافه می‌کند) */
+  const mCmd = text.match(/^\/([a-zA-Z0-9_]+)(@\S+)?(?:\s+([\s\S]+))?$/);
+  const cmd = mCmd ? mCmd[1].toLowerCase() : '';
+  const cmdArg = (mCmd && mCmd[3] ? mCmd[3] : '').trim();
+  const startPay = cmd === 'start' ? cmdArg.match(/^pay_(\d+)$/) : null;
+  if (cmd === 'start') {
+    if (startPay) return handlePayBridge(db, env, p, chatId, user, num(startPay[1]));
     if (isNew) {
       await db.prepare('INSERT INTO transactions (user_id,amount,kind,ref) VALUES(?1,0,?2,?3)').bind(user.id, 'register', 'signup').run();
       if (madeAdmin) await sendBot(bBase(p), bToken(env, st0, p), chatId, '🛡 <b>شما به عنوان مدیر اصلی پلتفرم ثبت شدید!</b>\n\nهمه بخش‌ها در اختیار شماست. برای شروع، «🛡 پنل مدیریت» را بزن و تنظیمات را کامل کن.\n\n👇 از منوی زیر استفاده کن:', mainKb(user, true));
@@ -1609,11 +1794,12 @@ async function handleBotMessage(db, env, p, msg) {
     await showMain(db, env, p, chatId, user);
     return;
   }
-  if (text === '/help') return showHelp(db, env, p, chatId, null, user);
-  if (text === '/myid') return sendBot(bBase(p), bToken(env, st0, p), chatId, `🆔 شناسه عددی شما:\n<code>${chatId}</code>`);
-  if (text === '/cancel') { await setBState(db, p, chatId, null); return sendBot(bBase(p), bToken(env, st0, p), chatId, '❌ عملیات لغو شد.', mainKb(user, isAdmin)); }
-  if (text === '/link') return showLinkCode(db, env, p, chatId, null, user);
-  if (text === '/admin') { if (isAdmin) return showAdminPanel(db, env, p, chatId, null); }
+  if (cmd === 'help') return showHelp(db, env, p, chatId, null, user);
+  if (cmd === 'myid') return sendBot(bBase(p), bToken(env, st0, p), chatId, `🆔 شناسه عددی شما:\n<code>${chatId}</code>`);
+  if (cmd === 'cancel') { await setBState(db, p, chatId, null); return sendBot(bBase(p), bToken(env, st0, p), chatId, '❌ عملیات لغو شد.', mainKb(user, isAdmin)); }
+  if (cmd === 'link') return showLinkCode(db, env, p, chatId, null, user);
+  if (cmd === 'mycode') return showMyCode(db, env, p, chatId, null, user);
+  if (cmd === 'admin') { if (isAdmin) return showAdminPanel(db, env, p, chatId, null); }
 
   /* ماشین حالت */
   const s = await getBState(db, p, chatId);
@@ -1632,6 +1818,34 @@ async function handleBotMessage(db, env, p, msg) {
     await setBState(db, p, chatId, null);
     return sendBot(bBase(p), T, chatId, `✅ رمز سایت تنظیم شد!\n\n🌐 ورود به سایت:\n📛 نام کاربری: <code>${esc(user.username)}</code>\n🔑 رمز: همان که فرستادی`, mainKb(user, isAdmin));
   }
+  /* وارد کردن کد معرف در ربات */
+  if (s.flow === 'refjoin') {
+    if (cmd === 'skip') {
+      await setBState(db, p, chatId, { flow: 'refset', data: { roomId: num(s.data.roomId), slotNo: num(s.data.slotNo), refcode: '', refname: '' } });
+      return joinMethodKb(db, env, p, chatId, null, num(s.data.roomId), num(s.data.slotNo), user);
+    }
+    const code = text.trim().toUpperCase().slice(0, 20);
+    const owner = await db.prepare('SELECT id, display_name, username FROM users WHERE referral_code=?1 AND banned=0').bind(code).first();
+    if (!owner) return sendBot(bBase(p), T, chatId, `⚠️ کد معرف «${esc(code)}» پیدا نشد.\nکد را دوباره بفرست یا /skip را بزن:`);
+    if (num(owner.id) === num(user.id)) return sendBot(bBase(p), T, chatId, '⛔️ این کد خودت است! کد یک دوستِ دیگر را بفرست یا /skip را بزن:');
+    await setBState(db, p, chatId, { flow: 'refset', data: { roomId: num(s.data.roomId), slotNo: num(s.data.slotNo), refcode: code, refname: String(owner.display_name || owner.username || '').slice(0, 30) } });
+    return joinMethodKb(db, env, p, chatId, null, num(s.data.roomId), num(s.data.slotNo), user);
+  }
+  if (s.flow === 'refset') {
+    /* کد ثبت شده — نمایش مجدد روش‌های پرداخت */
+    return joinMethodKb(db, env, p, chatId, null, num(s.data.roomId), num(s.data.slotNo), user);
+  }
+  /* تغییر کیف پول کاربر توسط ادمین */
+  if (s.flow === 'wal' && isAdmin) {
+    const n = num(numFa(text).replace(/[,،\s]/g, ''));
+    if (!n) return sendBot(bBase(p), T, chatId, '⚠️ عدد معتبر بفرست (برای کاهش منفی، مثلاً <code>-50000</code>):');
+    await db.prepare('UPDATE users SET wallet = wallet + ?2 WHERE id=?1').bind(s.data.userId, n).run();
+    await db.prepare('INSERT INTO transactions (user_id,amount,kind,ref) VALUES(?1,?2,?3,?4)').bind(s.data.userId, n, 'admin', 'ADM#' + user.id).run();
+    const nw = await db.prepare('SELECT wallet FROM users WHERE id=?1').bind(s.data.userId).first();
+    await setBState(db, p, chatId, null);
+    notifyUser(db, env, s.data.userId, `${n > 0 ? '💰 <b>کیف پولت افزایش یافت!</b>' : '⚠️ <b>کیف پولت کاهش یافت</b>'}\n\n${n > 0 ? '➕' : '➖'} مبلغ: <b>${money(Math.abs(n))} تومان</b>\n💼 موجودی جدید: <b>${money(num(nw && nw.wallet))} تومان</b>\n\nتوسط مدیریت پلتفرم`);
+    return sendBot(bBase(p), T, chatId, `✅ کیف پول ${esc(s.data.name)} ${n > 0 ? 'افزایش' : 'کاهش'} یافت.\n💼 موجودی جدید: <b>${money(num(nw && nw.wallet))} تومان</b>`, [[{ text: '🔙 کاربر', callback_data: `adm:u:${s.data.userId}` }]]);
+  }
   if (s.flow === 'receipt' || s.flow === 'topref') {
     let pid = num(s.data.payment_id);
     /* شارژ کیف پول: اگر هنوز پرداخت ساخته نشده، با اولین پیام ساخته می‌شود */
@@ -1642,7 +1856,7 @@ async function handleBotMessage(db, env, p, msg) {
     }
     const pay = await db.prepare('SELECT * FROM payments WHERE id=?1').bind(pid).first();
     if (!pay) { await setBState(db, p, chatId, null); return sendBot(bBase(p), T, chatId, '⚠️ پرداخت یافت نشد.', mainKb(user, isAdmin)); }
-    if (text === '/skip' || text === '/cancel') {
+    if (text === '/skip' || cmd === 'skip' || text === '/cancel' || cmd === 'cancel') {
       const done = !!s.data.proof;
       await setBState(db, p, chatId, null);
       return sendBot(bBase(p), T, chatId, done ? '✅ رسید شما ثبت شد و در حال بررسی توسط مدیریت است.' : '⚠️ تا وقتی عکس رسید نفرستی، پرداختت بررسی نمی‌شود. هر وقت عکس آماده بود، همین‌جا بفرست.', s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }]] : mainKb(user, isAdmin));
@@ -1704,7 +1918,7 @@ async function handleBotMessage(db, env, p, msg) {
   if (s.flow === 'set' && isAdmin) {
     let val = text;
     if (text === 'حذف') val = '';
-    if (s.data.key === 'min_topup') val = String(num(numFa(text).replace(/[,،]/g, '')));
+    if (s.data.key === 'min_topup' || s.data.key === 'referral_reward') val = String(Math.max(0, Math.floor(num(numFa(text).replace(/[,،\s]/g, '')))));
     await setSetting(db, s.data.key, val);
     await setBState(db, p, chatId, null);
     return sendBot(bBase(p), T, chatId, `✅ «${SET_LABELS[s.data.key]}» بروزرسانی شد.`, [[{ text: '🔙 تنظیمات', callback_data: 'adm:set' }]]);
@@ -1791,6 +2005,7 @@ async function apiRoute(req, env, db, url) {
       if (pum[2] === 'role') return apiUserRole(db, req, num(pum[1]));
       return apiUserBan(db, req, num(pum[1]));
     }
+    if (/^\/api\/users\/(\d+)\/wallet$/.test(p)) return apiUserWallet(db, env, req, num(p.match(/^\/api\/users\/(\d+)\/wallet$/)[1]));
     if (p === '/api/settings') return apiSettingsSet(db, req);
     if (p === '/api/broadcast') return apiBroadcast(db, env, req);
     if (p === '/api/webhook/set') return apiWebhookSet(db, env, req, origin);

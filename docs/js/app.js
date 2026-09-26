@@ -1,6 +1,7 @@
 /* ══════════════════════════════════════════════════════════
-   CODM ROOMS — SPA v1.0
+   CODM ROOMS — SPA v1.5.0
    سایت + پنل ادمین — متصل به Cloudflare Worker با دیتابیس D1
+   v1.5: کد معرف (رفرال) + پاداش کیف پول + مدیریت کیف پول ادمین + آیدی ربات‌ها
    ══════════════════════════════════════════════════════════ */
 'use strict';
 
@@ -260,6 +261,14 @@ async function viewHome() {
       <div class="feat reveal rv-d2"><div class="ic">💳</div><h3>پرداخت چندروشه</h3><p>کیف پول داخلی، کارت به کارت یا درگاه آنلاین — هرطور راحت هستی. وضعیت پرداخت لحظه‌ای آپدیت می‌شود.</p></div>
       <div class="feat reveal rv-d3"><div class="ic">🤖</div><h3>ربات تلگرام + بله</h3><p>همه‌چیز از داخل ربات هم انجام می‌شود! ثبت‌نام، پرداخت، اطلاع‌رسانی Room ID و جوایز — با یک دیتابیس مشترک با سایت.</p></div>
       <div class="feat reveal rv-d4"><div class="ic">🏆</div><h3>جوایز نقدی شفاف</h3><p>جوایز قهرمان‌ها توسط مدیریت تایید و مستقیماً به کیف پول واریز می‌شود. همه‌چیز قابل رهگیری است.</p></div>
+      <div class="feat reveal rv-d5"><div class="ic">🎯</div><h3>کد معرف و پاداش</h3><p>کد معرف اختصاصی بگیر و برای هر دعوت موفق، پاداش نقدی به کیف پولت برس — ورودی روم‌ها می‌تواند رایگان شود!</p></div>
+    </div>
+  </section>
+  <section class="sec" style="padding-top:10px">
+    <div class="sec-head reveal"><h2>🤖 ربات‌های <span>ما</span></h2><p>همه‌چیز از داخل ربات تلگرام یا بله هم انجام می‌شود — همین حالا استارت بزن</p></div>
+    <div class="bots-grid">
+      ${S.cfg && S.cfg.tg_bot_id ? `<a class="botcard reveal rv-d1" href="https://t.me/${esc(S.cfg.tg_bot_id)}" target="_blank" rel="noopener"><div class="bic">📱</div><h3>ربات تلگرام</h3><div class="bid ltr">@${esc(S.cfg.tg_bot_id)}</div><small>ثبت‌نام، پرداخت و اطلاع‌رسانی</small></a>` : ''}
+      ${S.cfg && S.cfg.bale_bot_id ? `<a class="botcard reveal rv-d2" href="https://ble.ir/${esc(S.cfg.bale_bot_id)}" target="_blank" rel="noopener"><div class="bic">💬</div><h3>ربات بله</h3><div class="bid ltr">@${esc(S.cfg.bale_bot_id)}</div><small>ارسال رسید پرداخت و پشتیبانی</small></a>` : ''}
     </div>
   </section>
   <section class="sec" style="padding-top:10px">
@@ -434,14 +443,20 @@ async function joinModal(roomId, slotNo) {
   const opts = [`<button class="payopt" onclick="doJoin(${roomId},${slotNo},'wallet')"><span class="pi">💼</span><span class="pt"><b>کیف پول داخلی</b><small>موجودی: ${money(S.me.wallet)} تومان — پرداخت آنی و قطعی</small></span></button>`];
   if (cfg.has_card) opts.push(`<button class="payopt" onclick="payCard(${roomId},${slotNo})"><span class="pi">💳</span><span class="pt"><b>کارت به کارت</b><small>واریز به کارت + ارسال عکس رسید در ربات بله</small></span></button>`);
   if (cfg.has_gateway) opts.push(`<button class="payopt" onclick="doJoin(${roomId},${slotNo},'online')"><span class="pi">🏦</span><span class="pt"><b>درگاه پرداخت آنلاین</b><small>پرداخت امن با کارت بانکی</small></span></button>`);
+  const rw = cfg.referral_reward || 10000;
   modal(`<h3>🎯 رزرو موقعیت ${fa(slotNo)}</h3>
     <p class="msub">ورودی این روم: <b style="color:var(--acc)">${money(fee)} تومان</b> — روش پرداخت را انتخاب کن:</p>
+    <div class="field"><label>🎯 کد معرف (اختیاری)</label><input id="refIn" class="ltr" placeholder="کد معرف دوستت" autocomplete="off"></div>
+    <p class="msub" style="font-size:12px;margin-top:-6px">با وارد کردن کد معرف، ${money(rw)} تومان به کیف پول صاحب کد اضافه می‌شود.</p>
     ${S.me.wallet >= fee ? '' : '<div class="malert info">💡 موجودی کیف پولت کافی نیست؛ می‌توانی از کارت/درگاه بپردازی یا کیف پولت را شارژ کنی.</div>'}
     ${opts.join('')}`);
 }
 window.doJoin = async (roomId, slotNo, method) => {
   try {
-    const r = await api(`/api/rooms/${roomId}/join`, { method: 'POST', body: { slot_no: slotNo, method } });
+    const refEl = $('#refIn');
+    const referral_code = refEl ? refEl.value.trim() : '';
+    const r = await api(`/api/rooms/${roomId}/join`, { method: 'POST', body: { slot_no: slotNo, method, referral_code } });
+    if (r.referral) toast(`🎯 کد معرف ${r.referral.owner} ثبت شد — ${money(r.referral.reward)} ت به کیف پول او می‌رسد`, 'ok', 4500);
     if (r.status === 'paid') { closeModal(); toast('🎉 ' + r.message, 'ok', 4500); await refreshMe(); route(); }
     else if (r.status === 'pending') {
       if (method === 'card' && r.card) cardModal(r.payment_id, r.card, r.fee, roomId);
@@ -546,6 +561,16 @@ function viewHelp() {
       <p class="mut" style="line-height:2.2;font-size:14px">
       اگر اول در ربات ثبت‌نام کرده‌ای، در ربات تلگرام 📱 یا بله 💬 دستور <code class="ltr">/link</code> بزن و کد را بگیر؛ بعد در «پروفایل» سایت دکمه «اتصال تلگرام» یا «اتصال بله» را بزن و کد را وارد کن تا حساب‌ها یکی شوند؛ موجودی و روم‌هایت در هر سه جا یکی نمایش داده می‌شود. هر پلتفرم جداگانه وصل می‌شود — مثلاً می‌توانی اول بله را وصل کنی و بعداً تلگرام را.</p>
     </div>
+    <div class="plist-card"><h3>🎯 کد معرف (پاداش دعوت دوستان)</h3>
+      <p class="mut" style="line-height:2.2;font-size:14px">
+      کد اختصاصی تو در «پروفایل» و در ربات با <code class="ltr">/mycode</code> است. هر دوست که هنگام ثبت‌نام در روم‌های پولی، کد تو را در قسمت «کد معرف» وارد کند و پرداختش تایید شود، پاداش نقدی (پیش‌فرض ۱۰,۰۰۰ تومان — توسط مدیریت قابل تغییر) به کیف پولت اضافه می‌شود. هر بار که کدت استفاده شود دوباره پاداش می‌گیری؛ با جمع شدن پاداش‌ها، ورودی روم‌های بعدی‌ات می‌تواند کاملاً رایگان شود — کیف پول خودکار برای ورودی استفاده می‌شود.</p>
+    </div>
+    <div class="plist-card"><h3>🤖 آیدی ربات‌های ما</h3>
+      <p class="mut" style="line-height:2.2;font-size:14px">
+      ${S.cfg && S.cfg.tg_bot_id ? `📱 ربات تلگرام: <a href="https://t.me/${esc(S.cfg.tg_bot_id)}" target="_blank" rel="noopener" style="color:var(--acc)" class="ltr">@${esc(S.cfg.tg_bot_id)}</a><br>` : '📱 ربات تلگرام: هنوز تنظیم نشده<br>'}
+      ${S.cfg && S.cfg.bale_bot_id ? `💬 ربات بله: <a href="https://ble.ir/${esc(S.cfg.bale_bot_id)}" target="_blank" rel="noopener" style="color:var(--acc)" class="ltr">@${esc(S.cfg.bale_bot_id)}</a><br>` : '💬 ربات بله: هنوز تنظیم نشده<br>'}
+      <small>آیدی‌ها توسط مدیریت از تنظیمات پنل قابل تغییر است.</small></p>
+    </div>
     <div class="plist-card"><h3>⚠️ قوانین مهم</h3>
       <p class="mut" style="line-height:2.2;font-size:14px">
       • بعد از شروع روم، انصراف و بازگشت وجه ممکن نیست.<br>
@@ -575,6 +600,12 @@ async function viewProfile() {
           <span class="rl ${S.me.role === 'admin' ? 'adm' : 'usr'}">${S.me.role === 'admin' ? '🛡 مدیر' : '👤 سرباز'}</span>
           <div class="walletbox"><div class="wl">💼 موجودی کیف پول</div><div class="wv">${money(S.me.wallet)} <small style="font-size:12px">تومان</small></div>
             <button class="btn sm blk" style="margin-top:12px" onclick="topupModal()">➕ شارژ کیف پول</button></div>
+          <div class="refbox">
+            <div class="wl">🎯 کد معرف من</div>
+            <div class="refcode-row"><code class="ltr" id="myRefCode">${esc((S.meData && S.meData.user && S.meData.user.referral_code) || S.me.referral_code || '—')}</code><button class="copybtn" onclick="copyTxt(document.getElementById('myRefCode').textContent)">📋 کپی</button></div>
+            <div class="refstat">👥 ${(S.meData && S.meData.referral) ? fa(S.meData.referral.uses) : '۰'} دعوت موفق • 💰 ${(S.meData && S.meData.referral) ? money(S.meData.referral.earned) : '۰'} تومان درآمد</div>
+            <div class="mut" style="font-size:12px;line-height:1.9">دوستانت این کد را هنگام ثبت‌نام در روم‌های پولی وارد کنند تا ${money((S.cfg && S.cfg.referral_reward) || 10000)} تومان به کیف پولت اضافه شود — هر بار!</div>
+          </div>
           <div style="margin-top:16px;font-size:12.5px;line-height:2.2" class="mut">
             📛 یوزرنیم: <b class="ltr">${esc(S.me.username)}</b><br>
             🎮 آیدی کالاف: <b>${esc(S.me.codm_id) || '—'}</b><br>
@@ -605,7 +636,7 @@ async function viewProfile() {
           ${d.prizes.length ? d.prizes.map((z) => `<div class="tx-item"><span>${z.status === 'approved' ? '✅' : z.status === 'pending' ? '⏳' : '❌'} ${esc(z.note || 'جایزه')}</span><span class="tx-amt ${z.status === 'approved' ? 'plus' : ''}">${money(z.amount)} ت</span></div>`).join('') : '<span class="mut">هنوز جایزه‌ای نداری</span>'}
         </div>
         <div class="plist-card"><h3>📋 تراکنش‌های اخیر</h3>
-          ${d.transactions.length ? d.transactions.map((t) => `<div class="tx-item"><span>${t.kind === 'topup' ? '💰 شارژ' : t.kind === 'entry' ? '🎮 ورودی روم' : t.kind === 'prize' ? '🏆 جایزه' : t.kind === 'refund' ? '↩️ بازگشت وجه' : t.kind === 'register' ? '🪖 ثبت‌نام' : esc(t.kind)}</span><span class="tx-amt ${num2(t.amount) >= 0 ? 'plus' : 'minus'}">${num2(t.amount) >= 0 ? '+' : ''}${money(t.amount)}</span></div>`).join('') : '<span class="mut">تراکنشی ثبت نشده</span>'}
+          ${d.transactions.length ? d.transactions.map((t) => `<div class="tx-item"><span>${t.kind === 'topup' ? '💰 شارژ' : t.kind === 'entry' ? '🎮 ورودی روم' : t.kind === 'prize' ? '🏆 جایزه' : t.kind === 'refund' ? '↩️ بازگشت وجه' : t.kind === 'register' ? '🪖 ثبت‌نام' : t.kind === 'referral' ? '🎯 پاداش کد معرف' : t.kind === 'admin' ? '🛡 تنظیم مدیریت' : esc(t.kind)}</span><span class="tx-amt ${num2(t.amount) >= 0 ? 'plus' : 'minus'}">${num2(t.amount) >= 0 ? '+' : ''}${money(t.amount)}</span></div>`).join('') : '<span class="mut">تراکنشی ثبت نشده</span>'}
         </div>
       </div>
     </div>
@@ -746,7 +777,7 @@ async function loadAdm() {
       b.innerHTML = `
       <div class="malert info">💡 توکن‌ها را از @BotFather تلگرام یا BotFather بله بگیر. درگاه به شکل <b class="ltr">https://pay.example.com/{amount}</b> باشد؛ اگر کاری تنظیم نشود، دکمه‌اش در سایت و ربات‌ها <b>خودکار مخفی می‌شود</b>.</div>
       <div class="set-grid">
-        ${[['tg_token', '🤖 توکن ربات تلگرام'], ['bale_token', '💬 توکن ربات بله'], ['card_number', '💳 شماره کارت (کارت به کارت)'], ['card_name', '👤 نام صاحب کارت'], ['bank_name', '🏦 نام بانک'], ['gateway_url', '🏦 آدرس درگاه ({amount})'], ['bale_bot_link', '💬 لینک ربات بله (خودکار از توکن — دستی اختیاری)'], ['tg_bot_link', '📱 لینک ربات تلگرام (دستی اختیاری)'], ['website_url', '🌐 آدرس این سایت'], ['announce_channel', '📣 کانال اعلان روم جدید'], ['min_topup', '⬇️ حداقل شارژ (تومان)'], ['support_bot', '🛡 لینک بات پشتیبانی'], ['shop_bot', '🛒 لینک بات فروشگاه'], ['welcome', '👋 متن خوش‌آمد ربات']].map(([k, l]) => `
+        ${[['tg_token', '🤖 توکن ربات تلگرام'], ['bale_token', '💬 توکن ربات بله'], ['tg_bot_id', '📱 آیدی ربات تلگرام (بدون @)'], ['bale_bot_id', '💬 آیدی ربات بله (بدون @)'], ['referral_reward', '🎯 پاداش کد معرف (تومان)'], ['card_number', '💳 شماره کارت (کارت به کارت)'], ['card_name', '👤 نام صاحب کارت'], ['bank_name', '🏦 نام بانک'], ['gateway_url', '🏦 آدرس درگاه ({amount})'], ['bale_bot_link', '💬 لینک ربات بله (خودکار از توکن — دستی اختیاری)'], ['tg_bot_link', '📱 لینک ربات تلگرام (دستی اختیاری)'], ['website_url', '🌐 آدرس این سایت'], ['announce_channel', '📣 کانال اعلان روم جدید'], ['min_topup', '⬇️ حداقل شارژ (تومان)'], ['support_bot', '🛡 لینک بات پشتیبانی'], ['shop_bot', '🛒 لینک بات فروشگاه'], ['welcome', '👋 متن خوش‌آمد ربات']].map(([k, l]) => `
         <div class="setrow"><label>${l}</label><input id="set_${k}" value="${esc(st[k] || '')}"></div>`).join('')}
       </div>
       <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
@@ -781,6 +812,7 @@ async function loadUsers(q) {
         <button class="btn sm ghost" onclick="toggleRole(${x.id},'${x.role}')">${x.role === 'admin' ? '👤' : '🛡'}</button>
         <button class="btn sm ghost" onclick="toggleBan(${x.id},${x.banned ? 0 : 1})">${x.banned ? '✅' : '⛔️'}</button>
         <button class="btn sm ghost" title="جایزه" onclick="prizeModal(${x.id},'${esc(x.display_name || x.username)}')">🏆</button>
+        <button class="btn sm ghost" title="کیف پول (+/-)" onclick="walletModal(${x.id},'${esc(x.display_name || x.username)}')">💰</button>
       </td></tr>`).join('') || '<tr><td colspan="7" class="mut" style="text-align:center;padding:30px">کاربری یافت نشد</td></tr>'}
     </tbody></table></div>`;
   } catch (e) { el.innerHTML = '⚠️'; }
@@ -799,10 +831,30 @@ window.prizeAct = async (id, act) => {
   try { await api(`/api/prizes/${id}/${act}`, { method: 'POST' }); toast(act === 'approve' ? 'جایزه پرداخت شد ✅' : 'رد شد', 'ok'); loadAdm(); } catch (e) {}
 };
 window.saveSettings = async () => {
-  const keys = ['tg_token', 'bale_token', 'card_number', 'card_name', 'bank_name', 'gateway_url', 'bale_bot_link', 'tg_bot_link', 'website_url', 'announce_channel', 'min_topup', 'support_bot', 'shop_bot', 'welcome'];
+  const keys = ['tg_token', 'bale_token', 'tg_bot_id', 'bale_bot_id', 'referral_reward', 'card_number', 'card_name', 'bank_name', 'gateway_url', 'bale_bot_link', 'tg_bot_link', 'website_url', 'announce_channel', 'min_topup', 'support_bot', 'shop_bot', 'welcome'];
   const body = {};
   keys.forEach((k) => { body[k] = $('#set_' + k).value; });
-  try { await api('/api/settings', { method: 'POST', body }); toast('تنظیمات ذخیره شد ✅', 'ok'); await api('/api/public/config', { silent: true }).then((c) => { S.cfg = c; }); } catch (e) {}
+  try { await api('/api/settings', { method: 'POST', body }); toast('تنظیمات ذخیره شد ✅', 'ok'); await api('/api/public/config', { silent: true }).then((c) => { S.cfg = c; }); fillBotIds(); } catch (e) {}
+};
+/* تغییر کیف پول کاربر توسط ادمین — افزایش/کاهش دستی */
+window.walletModal = (userId, name) => {
+  modal(`<h3>💰 تغییر کیف پول</h3>
+    <p class="msub">کاربر: <b>${esc(name)}</b></p>
+    <div class="field"><label>مبلغ تغییر (تومان)</label><input id="walD" type="number" class="ltr" placeholder="مثلاً 50000 یا -50000"></div>
+    <div class="field"><label>📝 یادداشت (اختیاری)</label><input id="walN" placeholder="مثلاً: تصحیح پرداخت"></div>
+    <div id="walErr"></div>
+    <button class="btn blk good" onclick="doWallet(${userId},1)">➕ افزایش موجودی</button>
+    <button class="btn blk bad" style="margin-top:8px" onclick="doWallet(${userId},-1)">➖ کاهش موجودی (مبلغ مثبت)</button>`);
+};
+window.doWallet = async (userId, sign) => {
+  let d = parseInt($('#walD').value, 10) || 0;
+  if (sign === -1) d = -Math.abs(d);
+  if (!d) return $('#walErr').innerHTML = '<div class="malert err">مبلغ معتبر وارد کن</div>';
+  try {
+    const r = await api(`/api/users/${userId}/wallet`, { method: 'POST', body: { delta: d, note: $('#walN').value.trim() } });
+    closeModal(); toast(`کیف پول بروزرسانی شد: ${money(r.wallet)} تومان ✅`, 'ok', 4000);
+    loadUsers($('#usrQ') ? $('#usrQ').value : '');
+  } catch (e) { $('#walErr').innerHTML = `<div class="malert err">${esc(e.message)}</div>`; }
 };
 window.webhookModal = () => {
   modal(`<h3>🔗 اتصال خودکار وب‌هوک‌ها</h3>
@@ -943,6 +995,16 @@ window.doPrize = async (name) => {
   } catch (e) { $('#pzErr').innerHTML = `<div class="malert err">${esc(e.message)}</div>`; }
 };
 
+/* آیدی ربات‌ها در فوتر + بازگشت id برای همه‌جا */
+function fillBotIds() {
+  const el = $('#botIds');
+  if (!el) return;
+  const parts = [];
+  if (S.cfg && S.cfg.tg_bot_id) parts.push(`<a href="https://t.me/${esc(S.cfg.tg_bot_id)}" target="_blank" rel="noopener" class="ltr">📱 @${esc(S.cfg.tg_bot_id)}</a>`);
+  if (S.cfg && S.cfg.bale_bot_id) parts.push(`<a href="https://ble.ir/${esc(S.cfg.bale_bot_id)}" target="_blank" rel="noopener" class="ltr">💬 @${esc(S.cfg.bale_bot_id)}</a>`);
+  el.innerHTML = parts.length ? parts.join(' ') : '<span class="mut" style="font-size:12px">آیدی ربات‌ها از تنظیمات ادمین نمایش داده می‌شود</span>';
+}
+window.fillBotIds = fillBotIds;
 /* ─────────── راه‌اندازی ─────────── */
 async function boot() {
   try { S.cfg = await api('/api/public/config', { silent: true }); } catch (e) { S.cfg = null; }
@@ -955,6 +1017,7 @@ async function boot() {
     const el = $('#apiVer'); if (el && h.version) el.textContent = 'نسخه سرور: v' + h.version;
   } catch (e) {}
   renderTop();
+  fillBotIds();
 }
 window.addEventListener('hashchange', route);
 $('#burger').addEventListener('click', () => $('#mainnav').classList.toggle('openm'));
