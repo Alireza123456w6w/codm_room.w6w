@@ -322,11 +322,13 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
 .hero-in>*:nth-child(3){animation-delay:.24s}
 .hero-in>*:nth-child(4){animation-delay:.36s}
 .hero-in>*:nth-child(5){animation-delay:.48s}
+.hero-in>*:nth-child(6){animation-delay:.62s}
 .hero h1 .glow{animation:glowText 2.8s ease-in-out infinite alternate}
 .hero-kicker{animation:badgeBlink 3.2s ease-in-out infinite}
 .brand-emblem{animation:glowPulse 3s ease-in-out infinite}
 .glow-fx{animation:floaty 9s ease-in-out infinite}
-.grid-fx{animation:gridSlide 14s linear infinite}
+/* پس‌زمینه شبکه: ثابت (انیمیشن background-position تمام‌صفحه سنگین است — ذرات حرکت را می‌سازند) */
+.grid-fx{animation:none}
 
 /* دکمه‌ها: جلوه براقی هنگام hover + فشار */
 .btn{position:relative;overflow:hidden}
@@ -405,3 +407,168 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
 .botids{margin-top:12px;display:flex;gap:10px;flex-wrap:wrap}
 .botids a{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:100px;font-size:12.5px;font-weight:700;color:var(--acc);background:var(--bg2);border:1px solid var(--line);text-decoration:none;transition:border-color .2s,color .2s;direction:ltr}
 .botids a:hover{border-color:rgba(255,159,26,.55);color:#ffc35e}
+
+/* ══════════════════════════════════════════════════════════
+   CINEMATIC FX v1.5 — پک انیمیشن سینمایی کالاف دیوتی
+   بوت تاکتیکال + ذرات جرقه + مکان‌نما رتیکل + گلیچ + تیلت سه‌بعدی
+   ══════════════════════════════════════════════════════════ */
+
+/* ── ۰) وینیت سینمایی دور صفحه ── */
+.vig-fx{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 45%,transparent 55%,rgba(0,0,0,.42) 100%)}
+#fxCanvas{position:absolute;inset:0;width:100%;height:100%}
+
+/* ── ۱) صفحه بوت تاکتیکال (DEPLOYING) ── */
+#boot{position:fixed;inset:0;z-index:400;display:grid;place-items:center;cursor:pointer;
+  background:radial-gradient(ellipse at 50% 40%,#10161f 0%,#07090d 70%);animation:bootFlicker 2.4s steps(1) infinite}
+#boot.done{animation:bootOut .65s cubic-bezier(.7,0,.3,1) forwards}
+.boot-corners::before,.boot-corners::after{content:'';position:absolute;width:46px;height:46px;border:2px solid rgba(255,159,26,.55)}
+.boot-corners::before{top:22px;inset-inline-start:22px;border-inline-end:none;border-bottom:none}
+.boot-corners::after{bottom:22px;inset-inline-end:22px;border-inline-start:none;border-top:none}
+.boot-in{text-align:center;direction:ltr}
+.boot-emblem{font-size:44px;margin-bottom:14px;animation:bootPulse 1.1s ease-in-out infinite;filter:drop-shadow(0 0 18px rgba(255,107,0,.7))}
+.boot-logo{font-family:'Russo One',sans-serif;font-size:clamp(34px,7vw,54px);letter-spacing:4px;color:#fff;position:relative}
+.boot-logo b{color:var(--acc);font-weight:400}
+.boot-logo::after{content:'';position:absolute;top:0;bottom:0;inset-inline-start:0;width:100%;background:linear-gradient(90deg,transparent,rgba(255,193,94,.5),transparent);mix-blend-mode:overlay;animation:bootScan 1.4s linear infinite}
+.boot-sub{margin-top:8px;font-size:11px;letter-spacing:5px;color:var(--mut)}
+.boot-bar{width:min(340px,64vw);height:4px;margin:30px auto 12px;background:var(--panel2);border:1px solid var(--line2);position:relative;overflow:hidden}
+.boot-bar i{position:absolute;top:0;bottom:0;inset-inline-start:0;width:0;background:var(--grad);box-shadow:0 0 14px rgba(255,107,0,.8);animation:bootBar 1.25s cubic-bezier(.3,.6,.4,1) forwards}
+.boot-status{font-size:10.5px;letter-spacing:3px;color:var(--acc2);animation:badgeBlink 1s steps(2) infinite}
+.boot-dots::after{content:'';animation:bootDots 1.2s steps(4) infinite}
+.boot-hint{position:absolute;bottom:26px;inset-inline:0;text-align:center;font-size:9.5px;letter-spacing:3px;color:var(--dim);animation:badgeBlink 2.2s ease-in-out infinite}
+@keyframes bootBar{0%{width:0}38%{width:42%}62%{width:58%}100%{width:100%}}
+@keyframes bootOut{0%{opacity:1;clip-path:inset(0 0 0 0)}28%{opacity:1;filter:brightness(2.2)}100%{opacity:0;clip-path:inset(50% 0 50% 0);filter:brightness(2.6)}}
+@keyframes bootPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.14)}}
+@keyframes bootScan{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+@keyframes bootDots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+@keyframes bootFlicker{0%,100%{opacity:1}93%{opacity:1}94%{opacity:.86}95%{opacity:1}97%{opacity:.92}98%{opacity:1}}
+
+/* ── ۲) مکان‌نما رتیکل تاکتیکال (دسکتاپ) ── */
+body.ccur *{cursor:none!important}
+body.ccur input,body.ccur textarea,body.ccur select{cursor:text!important}
+#reticle{position:fixed;top:0;left:0;z-index:390;width:0;height:0;pointer-events:none;opacity:0;transition:opacity .25s}
+#reticle.vis{opacity:1}
+#reticle i{position:absolute;transform:translate(-50%,-50%);transition:all .18s cubic-bezier(.22,1,.36,1)}
+#reticle .rr{width:34px;height:34px;border:1.5px solid rgba(255,159,26,.85);border-radius:50%;box-shadow:0 0 10px rgba(255,107,0,.35),inset 0 0 8px rgba(255,107,0,.15)}
+#reticle .rdot{width:4px;height:4px;background:var(--acc);border-radius:50%;box-shadow:0 0 8px rgba(255,159,26,.9)}
+#reticle .rt1,#reticle .rt2,#reticle .rt3,#reticle .rt4{width:7px;height:1.6px;background:rgba(255,193,94,.9)}
+#reticle .rt1{transform:translate(-50%,-50%) translateY(-13px)}
+#reticle .rt2{transform:translate(-50%,-50%) translateY(13px)}
+#reticle .rt3{transform:translate(-50%,-50%) translateX(-13px) rotate(90deg)}
+#reticle .rt4{transform:translate(-50%,-50%) translateX(13px) rotate(90deg)}
+#reticle.lock .rr{width:22px;height:22px;border-color:#ffd08a;box-shadow:0 0 16px rgba(255,159,26,.75)}
+#reticle.lock .rt1{transform:translate(-50%,-50%) translateY(-8px) rotate(45deg)}
+#reticle.lock .rt2{transform:translate(-50%,-50%) translateY(8px) rotate(45deg)}
+#reticle.lock .rt3{transform:translate(-50%,-50%) translateX(-8px) rotate(45deg)}
+#reticle.lock .rt4{transform:translate(-50%,-50%) translateX(8px) rotate(45deg)}
+#reticle.txt{opacity:0}
+
+/* ── ۳) فلش انتقال بین صفحات (route wipe) ── */
+#wipe{position:fixed;inset:0;z-index:95;pointer-events:none;overflow:hidden}
+#wipe i{position:absolute;top:0;bottom:0;width:38vw;left:-45vw;opacity:0;
+  background:linear-gradient(100deg,transparent 0%,rgba(255,159,26,.10) 35%,rgba(0,0,0,.5) 50%,rgba(255,159,26,.10) 65%,transparent 100%)}
+#wipe.go i{animation:wipeSweep .55s cubic-bezier(.5,0,.3,1)}
+@keyframes wipeSweep{0%{opacity:1;transform:translateX(0)}100%{opacity:1;transform:translateX(165vw)}}
+
+/* ── ۴) گلیچ عنوان هیرو ── */
+.glitch{position:relative;display:inline-block}
+.glitch::before,.glitch::after{content:attr(data-text);position:absolute;inset:0;opacity:0;pointer-events:none}
+.glitch::before{color:#38a1ff;z-index:-1;animation:glA 3.4s infinite steps(1)}
+.glitch::after{color:#ff4757;z-index:-2;animation:glB 3.4s infinite steps(1)}
+@keyframes glA{0%,88%,100%{opacity:0}89%{opacity:.75;transform:translate(2.5px,-2px);clip-path:inset(12% 0 58% 0)}92%{opacity:.75;transform:translate(-3px,1px);clip-path:inset(55% 0 18% 0)}95%{opacity:.6;transform:translate(2px,2px);clip-path:inset(75% 0 4% 0)}97%{opacity:0}}
+@keyframes glB{0%,88.5%,100%{opacity:0}90%{opacity:.7;transform:translate(-2.5px,2px);clip-path:inset(48% 0 30% 0)}93%{opacity:.7;transform:translate(3px,-1px);clip-path:inset(8% 0 74% 0)}96%{opacity:.5;transform:translate(-1px,-2px);clip-path:inset(30% 0 50% 0)}98%{opacity:0}}
+
+/* ── ۵) HUD هیرو: رادار چرخان + خطوط نشانه + براکت گوشه ── */
+.hud-ring{position:absolute;top:50%;inset-inline-end:6%;width:min(360px,30vw);aspect-ratio:1;transform:translateY(-50%);pointer-events:none;opacity:.5;z-index:1}
+.hud-ring::before{content:'';position:absolute;inset:0;border-radius:50%;border:1px solid rgba(255,159,26,.3);
+  background:conic-gradient(from 0deg,rgba(255,159,26,.35) 0deg,rgba(255,159,26,.05) 55deg,transparent 70deg,transparent 360deg);
+  -webkit-mask:radial-gradient(circle,transparent 58%,#000 59%);mask:radial-gradient(circle,transparent 58%,#000 59%);
+  animation:radarSpin 4.5s linear infinite}
+.hud-ring::after{content:'';position:absolute;inset:17%;border-radius:50%;border:1px dashed rgba(255,159,26,.25);animation:radarSpin 7s linear infinite reverse}
+.hud-cross{position:absolute;top:50%;inset-inline-end:6%;width:min(360px,30vw);aspect-ratio:1;transform:translateY(-50%);pointer-events:none;opacity:.4;z-index:1}
+.hud-cross::before,.hud-cross::after{content:'';position:absolute;background:linear-gradient(90deg,transparent,rgba(255,159,26,.5),transparent)}
+.hud-cross::before{top:50%;left:8%;right:8%;height:1px}
+.hud-cross::after{top:8%;bottom:8%;left:50%;width:1px;background:linear-gradient(180deg,transparent,rgba(255,159,26,.5),transparent)}
+@keyframes radarSpin{to{transform:rotate(360deg)}}
+.hud-bracket{position:absolute;width:26px;height:26px;border:2px solid rgba(255,159,26,.5);pointer-events:none;z-index:1;animation:bracketIn 1.2s cubic-bezier(.22,1,.36,1) both}
+.hud-bracket.tl{top:26px;inset-inline-start:26px;border-inline-end:none;border-bottom:none;clip-path:none}
+.hud-bracket.br{bottom:26px;inset-inline-end:26px;border-inline-start:none;border-top:none}
+@keyframes bracketIn{from{opacity:0;transform:scale(2.2)}to{opacity:1;transform:scale(1)}}
+
+/* ── ۶) ترمینال تاایپ‌رایتر میدان نبرد ── */
+.term{margin-top:26px;font-family:'Russo One',monospace;font-size:11.5px;letter-spacing:1.5px;color:#6fdc9a;
+  background:rgba(7,12,9,.65);border:1px solid rgba(46,204,113,.3);padding:9px 14px;max-width:520px;text-align:left;position:relative;overflow:hidden}
+.term::before{content:'▮';margin-inline-end:8px;color:#2ecc71;animation:badgeBlink .9s steps(2) infinite}
+.term::after{content:'';position:absolute;top:0;bottom:0;left:0;width:26px;background:linear-gradient(90deg,transparent,rgba(46,204,113,.14),transparent);animation:termSweep 2.6s linear infinite}
+@keyframes termSweep{from{transform:translateX(-32px)}to{transform:translateX(560px)}}
+
+/* ── ۷) زیرخط کشیده‌شونده تیتر سکشن‌ها ── */
+.sec-head h2{position:relative;padding-bottom:14px}
+.sec-head h2::after{content:'';position:absolute;bottom:0;left:50%;width:130px;height:3px;background:var(--grad);box-shadow:0 0 12px rgba(255,107,0,.5);
+  transform:translateX(-50%) scaleX(0);transition:transform .9s cubic-bezier(.22,1,.36,1) .15s}
+.reveal.in .sec-head h2::after,section .sec-head:not(.reveal) h2::after{transform:translateX(-50%) scaleX(1)}
+
+/* ── ۸) تیلت سه‌بعدی + درخشش دنبال‌کننده ماوس ── */
+.room-card,.feat,.botcard{transform-style:preserve-3d}
+.room-card::before,.feat::before{content:'';position:absolute;top:0;bottom:0;width:34%;inset-inline-start:-40%;opacity:0;pointer-events:none;
+  background:linear-gradient(100deg,transparent,rgba(255,193,94,.14),transparent);transition:inset-inline-start .0s}
+.room-card:hover::before,.feat:hover::before{opacity:1;inset-inline-start:130%;transition:inset-inline-start .7s ease}
+.gx{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s;border-radius:inherit;
+  background:radial-gradient(240px circle at var(--gx,50%) var(--gy,50%),rgba(255,200,110,.13),transparent 62%)}
+.room-card:hover .gx,.feat:hover .gx,.botcard:hover .gx{opacity:1}
+.room-card{position:relative}
+.feat{position:relative;overflow:hidden}
+.feat .ic{transition:transform .3s cubic-bezier(.34,1.56,.64,1),box-shadow .3s}
+.feat:hover .ic{transform:rotate(-7deg) scale(1.12);box-shadow:0 0 20px rgba(255,107,0,.4)}
+.botcard .bic{animation:iconFloat 3.6s ease-in-out infinite}
+@keyframes iconFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+
+/* ── ۹) ریپل کلیک روی دکمه‌ها ── */
+.btn .rip{position:absolute;border-radius:50%;pointer-events:none;background:radial-gradient(circle,rgba(255,255,255,.5) 0%,rgba(255,255,255,.18) 45%,transparent 65%);transform:scale(0);animation:ripOut .55s ease-out forwards}
+@keyframes ripOut{to{transform:scale(1);opacity:0}}
+
+/* ── ۱۰) نوار زنده روم باز + تپش CTA + نوار خطر ── */
+.rbadge.open{animation:livePulse 2s ease-in-out infinite}
+@keyframes livePulse{0%,100%{box-shadow:0 0 0 0 rgba(46,204,113,.4)}50%{box-shadow:0 0 0 6px rgba(46,204,113,0)}}
+.cta-in{position:relative;overflow:hidden;animation:ctaGlow 4.5s ease-in-out infinite alternate}
+@keyframes ctaGlow{from{box-shadow:0 0 22px rgba(255,107,0,.12)}to{box-shadow:0 0 44px rgba(255,107,0,.32)}}
+.cta-in::before{content:'';position:absolute;top:0;inset-inline:0;height:7px;
+  background:repeating-linear-gradient(-45deg,var(--acc) 0 14px,#10151d 14px 28px);background-size:40px 40px;animation:hazardMove 2.6s linear infinite;opacity:.85}
+.cta-in::after{content:'';position:absolute;bottom:0;inset-inline:0;height:7px;
+  background:repeating-linear-gradient(-45deg,var(--acc) 0 14px,#10151d 14px 28px);background-size:40px 40px;animation:hazardMove 2.6s linear infinite reverse;opacity:.85}
+@keyframes hazardMove{from{background-position:0 0}to{background-position:40px 0}}
+
+/* ── ۱۱) براکت قفل هدف روی اسلات‌ها ── */
+.slot::before,.slot::after{content:'';position:absolute;width:9px;height:9px;opacity:0;transition:.22s;pointer-events:none;z-index:2}
+.slot::before{top:4px;inset-inline-start:4px;border-top:2px solid var(--acc);border-inline-start:2px solid var(--acc)}
+.slot::after{bottom:4px;inset-inline-end:4px;border-bottom:2px solid var(--acc);border-inline-end:2px solid var(--acc)}
+.slot:hover::before,.slot:hover::after{opacity:1}
+.slot.free:hover{box-shadow:0 0 18px rgba(46,204,113,.35)}
+
+/* ── ۱۲) خط تاکتیکال بالای مودال + توست فنری ── */
+.modal::before{content:'';position:absolute;top:0;inset-inline:0;height:3px;background:var(--grad);transform-origin:right;animation:headLine .7s cubic-bezier(.22,1,.36,1) both}
+@keyframes headLine{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.modal-ov{animation:ovIn .3s}
+@keyframes ovIn{from{opacity:0}to{opacity:1}}
+.toast{animation:toastPop .45s cubic-bezier(.34,1.56,.64,1)}
+@keyframes toastPop{from{opacity:0;transform:translateY(22px) scale(.9)}60%{opacity:1;transform:translateY(-3px) scale(1.02)}to{opacity:1;transform:none}}
+
+/* ── ۱۳) جزئیات ریز ── */
+::selection{background:rgba(255,159,26,.4);color:#fff}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.chip,.admtab,.payopt,.copybtn,.mclose{transition:transform .15s,border-color .2s,color .2s,filter .2s}
+.chip:active,.admtab:active{transform:scale(.94)}
+.userchip{transition:transform .2s,border-color .2s}
+.userchip:hover{transform:translateY(-1px)}
+.stat .v{transition:color .3s}
+
+/* ── ۱۴) ریسپانسیو افکت‌ها ── */
+@media(max-width:960px){
+  .hud-ring,.hud-cross{opacity:.22;inset-inline-end:-8%}
+  .term{max-width:100%}
+}
+@media(max-width:640px){
+  .hud-ring,.hud-cross{display:none}
+  .term{font-size:10px;padding:8px 11px;margin-top:20px}
+  #boot .boot-logo{font-size:30px}
+  .boot-corners::before,.boot-corners::after{width:30px;height:30px}
+}

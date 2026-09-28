@@ -2,6 +2,7 @@
    CODM ROOMS — SPA v1.5.0
    سایت + پنل ادمین — متصل به Cloudflare Worker با دیتابیس D1
    v1.5: کد معرف (رفرال) + پاداش کیف پول + مدیریت کیف پول ادمین + آیدی ربات‌ها
+   + پک انیمیشن سینمایی CODM (بوت، ذرات، رتیکل، گلیچ، تیلت سه‌بعدی)
    ══════════════════════════════════════════════════════════ */
 'use strict';
 
@@ -207,6 +208,7 @@ async function route() {
   const h = (location.hash || '#/').slice(1);
   const app = $('#app');
   const parts = h.split('/').filter(Boolean);
+  if (window.FX) FX.wipe();
   $$('.mainnav a').forEach((a) => a.classList.toggle('on', a.dataset.nav === (parts[0] || 'home')));
   window.scrollTo({ top: 0 });
   try {
@@ -232,9 +234,13 @@ async function viewHome() {
   $('#app').innerHTML = `
   <section class="hero">
     <div class="hero-bg"></div>
+    <div class="hud-ring" aria-hidden="true"></div>
+    <div class="hud-cross" aria-hidden="true"></div>
+    <div class="hud-bracket tl" aria-hidden="true"></div>
+    <div class="hud-bracket br" aria-hidden="true"></div>
     <div class="hero-in">
       <span class="hero-kicker">🎯 پلتفرم شماره ۱ روم‌های CODM موبایل</span>
-      <h1>به <span class="glow">میدان نبرد</span> خوش آمدی، سرباز!</h1>
+      <h1>به <span class="glow glitch" data-text="میدان نبرد">میدان نبرد</span> خوش آمدی، سرباز!</h1>
       <p class="sub">روم‌های کالاف دیوتی موبایل را اینجا پیدا کن، موقعیت خودت را انتخاب کن، آنلاین بپرداز و در روم قطعی شو. جوایز نقدی هم منتظر قهرمان‌هاست! 🏆</p>
       <div class="hero-cta">
         <button class="btn lg" onclick="location.hash='#/rooms'">🎮 ورود به روم‌ها</button>
@@ -246,6 +252,7 @@ async function viewHome() {
         <div class="hbadge">🔔 اطلاع‌رسانی خودکار ربات</div>
         <div class="hbadge">🏆 جوایز نقدی تضمینی</div>
       </div>
+      <div class="term ltr" data-text="CONNECTION ESTABLISHED // SERVER: W6W // PING: 24MS // STATUS: READY" aria-hidden="true"></div>
     </div>
   </section>
   <div class="stats-strip"><div class="stats-grid">
@@ -286,6 +293,7 @@ async function viewHome() {
     <button class="btn lg" onclick="location.hash='#/rooms'">🎯 مشاهده روم‌های باز</button>
   </div></div>`;
   Reveal.arm(); armStats();
+  if (window.FX) FX.home();
 }
 
 /* ─────────── لیست روم‌ها ─────────── */
@@ -1005,6 +1013,181 @@ function fillBotIds() {
   el.innerHTML = parts.length ? parts.join(' ') : '<span class="mut" style="font-size:12px">آیدی ربات‌ها از تنظیمات ادمین نمایش داده می‌شود</span>';
 }
 window.fillBotIds = fillBotIds;
+/* ══════════════════════════════════════════════════════════
+   CINEMATIC FX v1.5 — پک انیمیشن سینمایی کالاف دیوتی موبایل
+   بوت تاکتیکال + ذرات جرقه/تیر + رتیکل + تیلت ۳بعدی + ریپل + گلیچ
+   همه افکت‌ها: فقط transform/opacity، توقف در تب مخفی، احترام به reduced-motion
+   ══════════════════════════════════════════════════════════ */
+const FX = (() => {
+  const mq = (q) => window.matchMedia && window.matchMedia(q).matches;
+  const REDUCE = mq('(prefers-reduced-motion: reduce)');
+  /* دسکتاپ واقعی: یا pointer:fine صریح، یا نبود coarse و نبود لمس */
+  const FINE = mq('(pointer: fine)') || (!mq('(pointer: coarse)') && !(navigator.maxTouchPoints > 0));
+  let termTimer = null;
+
+  /* ── صفحه بوت DEPLOYING (یک بار در هر سشن) ── */
+  function boot() {
+    const b = document.getElementById('boot');
+    if (!b) return;
+    if (REDUCE || sessionStorage.getItem('codm_boot')) { b.remove(); return; }
+    sessionStorage.setItem('codm_boot', '1');
+    let fin = false;
+    const done = () => { if (fin) return; fin = true; b.classList.add('done'); setTimeout(() => b.remove(), 700); };
+    const t = setTimeout(done, 1500);
+    b.addEventListener('click', () => { clearTimeout(t); done(); });
+  }
+
+  /* ── بوم ذرات: جرقه‌های بالارونده + رد تیر ── */
+  function canvasFX() {
+    if (REDUCE) return;
+    const cv = document.getElementById('fxCanvas');
+    if (!cv || !cv.getContext || cv.dataset.on) return;
+    cv.dataset.on = '1';
+    const ctx = cv.getContext('2d');
+    let W = 0, H = 0, DPR = 1, running = true, last = performance.now();
+    const tracers = [];
+    const resize = () => { DPR = Math.min(1.5, window.devicePixelRatio || 1); W = cv.width = innerWidth * DPR; H = cv.height = innerHeight * DPR; };
+    resize();
+    addEventListener('resize', resize, { passive: true });
+    const N = Math.round(Math.min(64, (innerWidth * innerHeight) / 30000));
+    const spawn = (init) => ({ x: Math.random() * W, y: init ? Math.random() * H : H + 12 * DPR, r: (Math.random() * 1.5 + .6) * DPR, s: (Math.random() * .38 + .16) * DPR, a: Math.random() * .45 + .14, ph: Math.random() * 6.28, sw: Math.random() * .5 + .18 });
+    const parts = Array.from({ length: N }, () => spawn(true));
+    setInterval(() => { if (running && document.visibilityState === 'visible' && Math.random() < .75) tracers.push({ x: Math.random() < .5 ? -40 : W + 40, y: (Math.random() * .7 + .08) * H, vx: 0, life: 1 }); }, 3400);
+    document.addEventListener('visibilitychange', () => { running = document.visibilityState === 'visible'; if (running) last = performance.now(); });
+    const frame = (t) => {
+      requestAnimationFrame(frame);
+      if (!running) return;
+      const dt = Math.min(50, t - last); last = t;
+      ctx.clearRect(0, 0, W, H);
+      for (const p of parts) {
+        p.y -= p.s * dt * .062; p.x += Math.sin(t / 950 + p.ph) * p.sw * dt * .02;
+        if (p.y < -14) Object.assign(p, spawn(false));
+        if (p.x < -14) p.x = W + 10; else if (p.x > W + 14) p.x = -10;
+        ctx.globalAlpha = p.a * (0.55 + 0.45 * Math.sin(t / 320 + p.ph * 3));
+        ctx.fillStyle = '#ffb14d';
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
+      }
+      for (let i = tracers.length - 1; i >= 0; i--) {
+        const tr = tracers[i];
+        if (!tr.vx) tr.vx = (tr.x < W / 2 ? 1 : -1) * (Math.random() * 8 + 6.5) * DPR;
+        tr.x += tr.vx * dt * .06; tr.life -= dt * .0028;
+        if (tr.life <= 0 || tr.x < -70 || tr.x > W + 70) { tracers.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.max(0, tr.life) * .5;
+        const g = ctx.createLinearGradient(tr.x - 32, tr.y, tr.x + 32, tr.y);
+        g.addColorStop(0, 'rgba(255,159,26,0)'); g.addColorStop(.5, 'rgba(255,224,160,.95)'); g.addColorStop(1, 'rgba(255,159,26,0)');
+        ctx.strokeStyle = g; ctx.lineWidth = 1.4 * DPR;
+        ctx.beginPath(); ctx.moveTo(tr.x - 32, tr.y); ctx.lineTo(tr.x + 32, tr.y); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    };
+    requestAnimationFrame(frame);
+  }
+
+  /* ── مکان‌نما رتیکل تاکتیکال (دسکتاپ) ── */
+  function cursorFX() {
+    if (REDUCE || !FINE) return;
+    const r = document.getElementById('reticle');
+    if (!r) return;
+    document.body.classList.add('ccur');
+    let x = innerWidth / 2, y = innerHeight / 2, tx = x, ty = y;
+    addEventListener('pointermove', (e) => {
+      tx = e.clientX; ty = e.clientY; r.classList.add('vis');
+      const t = e.target;
+      const txt = t.closest && t.closest('input,textarea,select');
+      const it = !txt && t.closest && t.closest('a,button,.slot,.room-card,.chip,.payopt,[onclick],.userchip,.crumb,label');
+      r.classList.toggle('txt', !!txt);
+      r.classList.toggle('lock', !!it);
+    }, { passive: true });
+    document.documentElement.addEventListener('mouseleave', () => r.classList.remove('vis'));
+    (function loop() { x += (tx - x) * .24; y += (ty - y) * .24; r.style.transform = 'translate(' + x + 'px,' + y + 'px)'; requestAnimationFrame(loop); })();
+  }
+
+  /* ── تیلت سه‌بعدی + درخشش دنبال ماوس روی کارت‌ها ── */
+  function tiltFX() {
+    if (REDUCE || !FINE) return;
+    const SEL = '.room-card,.feat,.botcard';
+    let cur = null;
+    const reset = (el) => { el.style.transform = ''; };
+    const ensureGx = (el) => { if (!el.querySelector(':scope > .gx')) { const g = document.createElement('div'); g.className = 'gx'; el.appendChild(g); } };
+    document.addEventListener('pointermove', (e) => {
+      const el = e.target.closest && e.target.closest(SEL);
+      if (cur && el !== cur) { reset(cur); cur = null; }
+      if (!el) return;
+      cur = el; ensureGx(el);
+      const rc = el.getBoundingClientRect();
+      const px = (e.clientX - rc.left) / rc.width, py = (e.clientY - rc.top) / rc.height;
+      el.style.setProperty('--gx', (px * 100).toFixed(1) + '%');
+      el.style.setProperty('--gy', (py * 100).toFixed(1) + '%');
+      el.style.transform = 'perspective(850px) rotateX(' + ((.5 - py) * 6.5).toFixed(2) + 'deg) rotateY(' + ((px - .5) * 6.5).toFixed(2) + 'deg) translateY(-3px)';
+    }, { passive: true });
+    addEventListener('scroll', () => { if (cur) { reset(cur); cur = null; } }, { passive: true });
+    addEventListener('blur', () => { if (cur) { reset(cur); cur = null; } });
+  }
+
+  /* ── ریپل کلیک روی همه دکمه‌ها ── */
+  function rippleFX() {
+    document.addEventListener('pointerdown', (e) => {
+      const b = e.target.closest && e.target.closest('.btn');
+      if (!b) return;
+      const rc = b.getBoundingClientRect();
+      const d = Math.max(rc.width, rc.height) * 1.2;
+      const s = document.createElement('span');
+      s.className = 'rip';
+      s.style.width = s.style.height = d + 'px';
+      s.style.left = (e.clientX - rc.left - d / 2) + 'px';
+      s.style.top = (e.clientY - rc.top - d / 2) + 'px';
+      b.appendChild(s);
+      setTimeout(() => s.remove(), 600);
+    }, { passive: true });
+  }
+
+  /* ── دکمه‌های آهن‌ربایی CTA هیرو ── */
+  function magnetFX() {
+    if (REDUCE || !FINE) return;
+    document.addEventListener('pointermove', (e) => {
+      const h = e.target.closest && e.target.closest('.hero-cta');
+      if (!h) return;
+      h.querySelectorAll('.btn').forEach((b) => {
+        const rc = b.getBoundingClientRect();
+        const dx = e.clientX - (rc.left + rc.width / 2), dy = e.clientY - (rc.top + rc.height / 2);
+        const d = Math.hypot(dx, dy);
+        if (d < 120) b.style.transform = 'translate(' + (dx * .12).toFixed(1) + 'px,' + (dy * .16).toFixed(1) + 'px)';
+        else if (b.style.transform) b.style.transform = '';
+      });
+    }, { passive: true });
+  }
+
+  /* ── فلش انتقال بین صفحات ── */
+  let wipeT = null;
+  function wipe() {
+    if (REDUCE) return;
+    const w = document.getElementById('wipe');
+    if (!w) return;
+    clearTimeout(wipeT);
+    w.classList.remove('go');
+    void w.offsetWidth;
+    w.classList.add('go');
+    wipeT = setTimeout(() => w.classList.remove('go'), 620);
+  }
+
+  /* ── ترمینال تاایپ‌رایتر صفحه خانه ── */
+  function home() {
+    const el = document.querySelector('.term');
+    if (!el) return;
+    clearInterval(termTimer);
+    const txt = el.dataset.text || '';
+    if (REDUCE) { el.textContent = txt; return; }
+    el.textContent = '';
+    let i = 0;
+    termTimer = setInterval(() => { i++; el.textContent = txt.slice(0, i); if (i >= txt.length) clearInterval(termTimer); }, 26);
+  }
+
+  function init() {
+    boot(); canvasFX(); cursorFX(); tiltFX(); rippleFX(); magnetFX();
+  }
+  return { init, wipe, home };
+})();
+window.FX = FX;
 /* ─────────── راه‌اندازی ─────────── */
 async function boot() {
   try { S.cfg = await api('/api/public/config', { silent: true }); } catch (e) { S.cfg = null; }
@@ -1023,6 +1206,7 @@ window.addEventListener('hashchange', route);
 $('#burger').addEventListener('click', () => $('#mainnav').classList.toggle('openm'));
 document.addEventListener('click', (e) => { if (window.innerWidth <= 960 && !e.target.closest('.topbar')) $('#mainnav').classList.remove('openm'); });
 $('#year').textContent = new Date().getFullYear();
+try { FX.init(); } catch (e) { document.body.classList.remove('ccur'); }
 boot().then(route);
 
 

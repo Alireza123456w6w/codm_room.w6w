@@ -12,7 +12,28 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div class="bg-fx"><div class="grid-fx"></div><div class="glow-fx"></div><div class="scan-fx"></div></div>
+
+<!-- ═══ صفحه بوت تاکتیکال (فقط بار اول هر سشن) ═══ -->
+<div id="boot" aria-hidden="true">
+  <div class="boot-corners"></div>
+  <div class="boot-in">
+    <div class="boot-emblem">🎯</div>
+    <div class="boot-logo en">CODM <b>ROOMS</b></div>
+    <div class="boot-sub en">TACTICAL ROOM PLATFORM // W6W</div>
+    <div class="boot-bar"><i></i></div>
+    <div class="boot-status en">DEPLOYING TO BATTLEFIELD<span class="boot-dots"></span></div>
+  </div>
+  <div class="boot-hint en">CLICK TO SKIP</div>
+</div>
+
+<!-- لایه ذرات سینمایی (جرقه‌ها + تیرها) -->
+<div class="bg-fx"><canvas id="fxCanvas" aria-hidden="true"></canvas><div class="grid-fx"></div><div class="glow-fx"></div><div class="scan-fx"></div><div class="vig-fx"></div></div>
+
+<!-- مکان‌نما رتیکل تاکتیکال (فقط دسکتاپ) -->
+<div id="reticle" aria-hidden="true"><i class="rr"></i><i class="rdot"></i><i class="rt1"></i><i class="rt2"></i><i class="rt3"></i><i class="rt4"></i></div>
+
+<!-- فلش انتقال بین صفحات -->
+<div id="wipe" aria-hidden="true"><i></i></div>
 
 <header class="topbar">
   <a class="brand" href="#/">
