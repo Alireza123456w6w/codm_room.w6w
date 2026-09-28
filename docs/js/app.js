@@ -1183,9 +1183,21 @@ const FX = (() => {
   }
 
   function init() {
-    boot(); canvasFX(); cursorFX(); tiltFX(); rippleFX(); magnetFX();
+    /* هر زیرسیستم جدا: خرابی یکی هرگز بقیه را نمی‌کشد */
+    [[boot],[canvasFX],[cursorFX],[tiltFX],[rippleFX],[magnetFX]].forEach((f) => {
+      try { f[0](); } catch (e) { try { document.body.classList.remove('ccur'); } catch (_) {} }
+    });
   }
-  return { init, wipe, home };
+  /* بازپخش اینترو: اگر سیستم روی «کاهش حرکت» باشد، کاربر را با توست راهنمایی کن */
+  function replay() {
+    try { sessionStorage.removeItem('codm_boot'); } catch (_) {}
+    if (REDUCE) {
+      toast('⚙️ حالت «کاهش حرکت» (Reduce Motion) در دستگاه شما روشن است — انیمیشن‌ها عمداً خاموش می‌شوند. از تنظیمات دسترسی‌پذیری/باتری‌سیور خاموشش کن و دوباره امتحان کن.', 'info', 7000);
+      return;
+    }
+    location.reload();
+  }
+  return { init, wipe, home, replay, reduce: REDUCE, fine: FINE };
 })();
 window.FX = FX;
 /* ─────────── راه‌اندازی ─────────── */
@@ -1207,6 +1219,7 @@ $('#burger').addEventListener('click', () => $('#mainnav').classList.toggle('ope
 document.addEventListener('click', (e) => { if (window.innerWidth <= 960 && !e.target.closest('.topbar')) $('#mainnav').classList.remove('openm'); });
 $('#year').textContent = new Date().getFullYear();
 try { FX.init(); } catch (e) { document.body.classList.remove('ccur'); }
+try { const fr = $('#fxReplay'); if (fr) fr.addEventListener('click', () => FX.replay()); } catch (e) {}
 boot().then(route);
 
 

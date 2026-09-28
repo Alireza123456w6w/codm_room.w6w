@@ -373,6 +373,10 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
 .lok{color:#7de3a4}
 .lmut{color:var(--mut);font-weight:400}
 .apiver{display:inline-block;margin-inline-start:14px;padding:2px 10px;border-radius:100px;font-size:11px;color:var(--mut);background:var(--bg2);border:1px solid var(--line);direction:ltr}
+/* دکمه بازپخش اینترو در فوتر */
+.fxreplay{margin-inline-start:10px;padding:3px 12px;border-radius:100px;font-size:11px;font-family:inherit;color:var(--amber,#ffb14d);background:transparent;border:1px solid rgba(255,177,77,.35);cursor:pointer;transition:all .25s ease}
+.fxreplay:hover{background:rgba(255,177,77,.12);border-color:rgba(255,177,77,.7);box-shadow:0 0 14px rgba(255,177,77,.25);transform:translateY(-1px)}
+.fxreplay:active{transform:translateY(0) scale(.96)}
 
 /* حرکت کمتر: احترام به تنظیم کاربر */
 @media(prefers-reduced-motion:reduce){
