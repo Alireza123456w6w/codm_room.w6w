@@ -249,10 +249,17 @@ export class ApiService {
     return this.request('/api/me');
   }
 
-  public static async updateMe(data: { display_name?: string; codm_id?: string; password?: string }): Promise<{ user: User }> {
+  public static async updateMe(data: { display_name?: string; codm_id?: string; password?: string; current_password?: string; old_password?: string }): Promise<{ user: User }> {
     return this.request('/api/me', {
       method: 'PUT',
       body: JSON.stringify(data)
+    });
+  }
+
+  public static async changePassword(currentPassword: string, newPassword: string): Promise<{ ok: boolean; message: string; user: User }> {
+    return this.request('/api/me/password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
     });
   }
 

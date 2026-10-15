@@ -30,8 +30,16 @@ export const Profile: React.FC<ProfileProps> = ({
   // Profile Edit
   const [displayName, setDisplayName] = useState(user?.display_name || '');
   const [codmId, setCodmId] = useState(user?.codm_id || '');
-  const [newPassword, setNewPassword] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
+
+  // Dedicated Password Change System
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passSuccess, setPassSuccess] = useState(false);
 
   // Topup Modal
   const [topupModal, setTopupModal] = useState(false);
@@ -92,17 +100,43 @@ export const Profile: React.FC<ProfileProps> = ({
     try {
       const res = await ApiService.updateMe({
         display_name: displayName.trim(),
-        codm_id: codmId.trim(),
-        password: newPassword ? newPassword : undefined
+        codm_id: codmId.trim()
       });
       AudioFX.play('lock');
       onUserUpdate(res.user);
-      setNewPassword('');
       onToast(isEn ? 'Profile updated successfully!' : 'اطلاعات پروفایل با موفقیت بروزرسانی شد!', 'ok');
     } catch (err: any) {
       onToast(err.message || 'خطا در ذخیره پروفایل', 'err');
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 4) {
+      onToast(isEn ? 'New password must be at least 4 characters.' : 'رمز عبور جدید باید حداقل ۴ کاراکتر باشد.', 'warn');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      onToast(isEn ? 'New passwords do not match!' : 'تکرار رمز عبور جدید همخوانی ندارد!', 'err');
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      const res = await ApiService.changePassword(currentPassword, newPassword);
+      AudioFX.play('lock');
+      onUserUpdate(res.user);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPassSuccess(true);
+      setTimeout(() => setPassSuccess(false), 5000);
+      onToast(isEn ? 'Password updated successfully! 🔐' : 'رمز عبور شما با موفقیت بروزرسانی شد! 🔐', 'ok');
+    } catch (err: any) {
+      onToast(err.message || (isEn ? 'Failed to update password' : 'خطا در تغییر رمز عبور'), 'err');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -407,23 +441,134 @@ export const Profile: React.FC<ProfileProps> = ({
               />
             </div>
 
+            <button
+              type="submit"
+              className="btn blk"
+              disabled={savingProfile}
+            >
+              {savingProfile ? (isEn ? 'Saving...' : 'در حال ذخیره...') : (isEn ? 'Save Profile' : 'ذخیره مشخصات')}
+            </button>
+          </form>
+        </div>
+
+        {/* ── سیستم تغییر رمز عبور و امنیت حساب ── */}
+        <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '12px', padding: '22px' }}>
+          <h3 style={{ fontSize: '17px', fontWeight: 800, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>🔐</span>
+            <span>{isEn ? 'Change Password & Security' : 'سیستم تغییر رمز عبور و امنیت'}</span>
+          </h3>
+
+          <p className="mut" style={{ fontSize: '13px', lineHeight: 1.8, marginBottom: '16px' }}>
+            {isEn
+              ? 'Keep your soldier account secure. Passwords must be at least 4 characters.'
+              : 'برای ورود به سایت و حفظ امنیت حساب، رمز عبور خود را بروزرسانی کنید (حداقل ۴ کاراکتر).'}
+          </p>
+
+          {passSuccess && (
+            <div style={{
+              background: 'rgba(46, 204, 113, 0.15)',
+              border: '1px solid var(--good)',
+              borderRadius: '8px',
+              padding: '12px 16px',
+              color: 'var(--good)',
+              fontSize: '13px',
+              fontWeight: 700,
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span>✅</span>
+              <span>{isEn ? 'Password changed successfully! You can now use it to sign in.' : 'رمز عبور با موفقیت تغییر کرد! از این پس با رمز جدید وارد شوید.'}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleChangePassword}>
             <div className="field">
-              <label>{isEn ? 'Change Password (Optional)' : 'تغییر رمز عبور (اختیاری)'}</label>
+              <label>{isEn ? 'Current Password (if already set)' : 'رمز عبور فعلی (در صورت وجود)'}</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showCurrentPass ? 'text' : 'password'}
+                  className="ltr"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder={isEn ? 'Enter current password...' : 'رمز فعلی حسابت را بنویس...'}
+                  style={{ width: '100%', paddingRight: '42px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPass(!showCurrentPass)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--mut)',
+                    cursor: 'pointer',
+                    fontSize: '15px'
+                  }}
+                  title={showCurrentPass ? 'مخفی کردن' : 'نمایش رمز'}
+                >
+                  {showCurrentPass ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+
+            <div className="field">
+              <label>{isEn ? 'New Password' : 'رمز عبور جدید'}</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showNewPass ? 'text' : 'password'}
+                  className="ltr"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder={isEn ? 'At least 4 characters...' : 'حداقل ۴ کاراکتر...'}
+                  required
+                  style={{ width: '100%', paddingRight: '42px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPass(!showNewPass)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--mut)',
+                    cursor: 'pointer',
+                    fontSize: '15px'
+                  }}
+                  title={showNewPass ? 'مخفی کردن' : 'نمایش رمز'}
+                >
+                  {showNewPass ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+
+            <div className="field">
+              <label>{isEn ? 'Confirm New Password' : 'تکرار رمز عبور جدید'}</label>
               <input
-                type="password"
+                type={showNewPass ? 'text' : 'password'}
                 className="ltr"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="رمز جدید..."
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder={isEn ? 'Re-type new password...' : 'رمز عبور جدید را دوباره وارد کنید...'}
+                required
               />
             </div>
 
             <button
               type="submit"
               className="btn blk"
-              disabled={savingProfile}
+              disabled={changingPassword || !newPassword}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
-              {savingProfile ? (isEn ? 'Saving...' : 'در حال ذخیره...') : (isEn ? 'Save Changes' : 'ذخیره تغییرات')}
+              <span>🔑</span>
+              <span>{changingPassword ? (isEn ? 'Updating Password...' : 'در حال تغییر رمز...') : (isEn ? 'Update Password' : 'تغییر و ثبت رمز جدید')}</span>
             </button>
           </form>
         </div>

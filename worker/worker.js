@@ -487,6 +487,30 @@ async function apiMe(db, req) {
   const ref = await refStatOf(db, u.id);
   return j({ ok: true, user: Object.assign(pubUser(u), { referral_code: refCode }), referral: ref, entries: entries.results || [], transactions: tx.results || [], prizes: prizes.results || [] });
 }
+async function apiMePassword(db, req) {
+  const u = await authUser(db, req);
+  if (!u) return j({ ok: false, error: 'unauthorized' }, 401);
+  const b = await body(req);
+  const curPass = String(b.current_password || b.old_password || '');
+  const newPass = String(b.new_password || b.password || '');
+  if (!newPass || newPass.length < 4) {
+    return j({ ok: false, error: 'رمز عبور جدید باید حداقل ۴ کاراکتر باشد' }, 400);
+  }
+  if (u.password_hash) {
+    if (!curPass) {
+      return j({ ok: false, error: 'لطفاً رمز عبور فعلی خود را وارد کنید' }, 400);
+    }
+    const curH = await sha256(curPass + '::codm');
+    if (curH !== u.password_hash) {
+      return j({ ok: false, error: 'رمز عبور فعلی اشتباه است' }, 400);
+    }
+  }
+  const newH = await sha256(newPass + '::codm');
+  await db.prepare('UPDATE users SET password_hash=?2 WHERE id=?1').bind(u.id, newH).run();
+  const nu = await db.prepare('SELECT * FROM users WHERE id=?1').bind(u.id).first();
+  return j({ ok: true, message: 'رمز عبور با موفقیت تغییر یافت ✅', user: pubUser(nu) });
+}
+
 async function apiMeUpdate(db, req) {
   const u = await authUser(db, req);
   if (!u) return j({ ok: false, error: 'unauthorized' }, 401);
@@ -495,6 +519,10 @@ async function apiMeUpdate(db, req) {
   if (b.codm_id !== undefined) await db.prepare('UPDATE users SET codm_id=?2 WHERE id=?1').bind(u.id, String(b.codm_id).slice(0, 40)).run();
   if (b.password) {
     if (String(b.password).length < 4) return j({ ok: false, error: 'رمز عبور حداقل ۴ کاراکتر باشد' }, 400);
+    if (u.password_hash && (b.current_password || b.old_password)) {
+      const curH = await sha256(String(b.current_password || b.old_password) + '::codm');
+      if (curH !== u.password_hash) return j({ ok: false, error: 'رمز عبور فعلی اشتباه است' }, 400);
+    }
     const h = await sha256(String(b.password) + '::codm');
     await db.prepare('UPDATE users SET password_hash=?2 WHERE id=?1').bind(u.id, h).run();
   }
@@ -1802,6 +1830,10 @@ async function handleBotMessage(db, env, p, msg) {
   if (cmd === 'cancel') { await setBState(db, p, chatId, null); return sendBot(bBase(p), bToken(env, st0, p), chatId, '❌ عملیات لغو شد.', mainKb(user, isAdmin)); }
   if (cmd === 'link') return showLinkCode(db, env, p, chatId, null, user);
   if (cmd === 'mycode') return showMyCode(db, env, p, chatId, null, user);
+  if (cmd === 'password' || cmd === 'pass' || cmd === 'chpass') {
+    await setBState(db, p, chatId, { flow: 'pass', data: {} });
+    return sendBot(bBase(p), bToken(env, st0, p), chatId, `🔑 <b>تنظیم یا تغییر رمز ورود به سایت</b>\n\nیک رمز عبور جدید (حداقل ۴ کاراکتر) ارسال کن تا با نام کاربری <code>${esc(user.username)}</code> بتوانی وارد سایت شوی.\n\nبرای لغو دستور /cancel را بزن.`);
+  }
   if (cmd === 'admin') { if (isAdmin) return showAdminPanel(db, env, p, chatId, null); }
 
   /* ماشین حالت */
@@ -1816,10 +1848,10 @@ async function handleBotMessage(db, env, p, msg) {
     return sendBot(bBase(p), T, chatId, '👇 از منوی زیر استفاده کن:', mainKb(user, isAdmin));
   }
   if (s.flow === 'pass') {
-    if (text.length < 4) return sendBot(bBase(p), T, chatId, '⚠️ رمز حداقل ۴ کاراکتر باشد. دوباره بفرست:');
+    if (text.length < 4) return sendBot(bBase(p), T, chatId, '⚠️ رمز عبور باید حداقل ۴ کاراکتر باشد. لطفاً دوباره بفرست (یا /cancel برای لغو):');
     await db.prepare('UPDATE users SET password_hash=?2 WHERE id=?1').bind(user.id, await sha256(text + '::codm')).run();
     await setBState(db, p, chatId, null);
-    return sendBot(bBase(p), T, chatId, `✅ رمز سایت تنظیم شد!\n\n🌐 ورود به سایت:\n📛 نام کاربری: <code>${esc(user.username)}</code>\n🔑 رمز: همان که فرستادی`, mainKb(user, isAdmin));
+    return sendBot(bBase(p), T, chatId, `✅ <b>رمز ورود به سایت با موفقیت تنظیم شد!</b>\n━━━━━━━━━━━━━━━━━━\n🌐 ورود به سایت:\n📛 نام کاربری: <code>${esc(user.username)}</code>\n🔑 رمز عبور جدید: همان رمزی که ارسال کردید\n\nحالا می‌توانید در سایت با این نام کاربری و رمز وارد شوید.`, mainKb(user, isAdmin));
   }
   /* وارد کردن کد معرف در ربات */
   if (s.flow === 'refjoin') {
@@ -2018,7 +2050,8 @@ async function apiRoute(req, env, db, url) {
       if (tk) await db.prepare('DELETE FROM sessions WHERE token=?1').bind(tk[1]).run();
       return j({ ok: true });
     }
-    if (p === '/api/me/update') return apiMeUpdate(db, req);
+    if (p === '/api/me/password') return apiMePassword(db, req);
+    if (p === '/api/me/update' || p === '/api/me') return apiMeUpdate(db, req);
     if (p === '/api/link') return apiLink(db, env, req);
     if (p === '/api/rooms') return apiRoomCreate(db, env, req);
     if (pm && pm[3] === 'join') return apiRoomJoin(db, env, req, num(pm[1]));
@@ -2051,7 +2084,11 @@ async function apiRoute(req, env, db, url) {
     if (p === '/api/broadcast') return apiBroadcast(db, env, req);
     if (p === '/api/webhook/set') return apiWebhookSet(db, env, req, origin);
   }
-  if (m === 'PUT' && pm && !pm[3]) return apiRoomUpdate(db, req, num(pm[1]));
+  if (m === 'PUT') {
+    if (p === '/api/me') return apiMeUpdate(db, req);
+    if (p === '/api/me/password') return apiMePassword(db, req);
+    if (pm && !pm[3]) return apiRoomUpdate(db, req, num(pm[1]));
+  }
   if (m === 'DELETE' && pm && !pm[3]) return apiRoomDelete(db, req, num(pm[1]));
   return j({ ok: false, error: 'endpoint not found' }, 404);
 }
