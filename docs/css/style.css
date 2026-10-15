@@ -1219,3 +1219,167 @@ html[lang="en"] .ticker-label {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+/* ══════════════════════════════════════════════════════════
+   CODM ROOMS — TACTICAL v1.6.0 (Bot Buttons & Mobile Login Fix)
+   ══════════════════════════════════════════════════════════ */
+
+/* تضمین نمایش ۱۰۰٪ کارت‌های ربات و المان‌های کلیدی حتی قبل از انیمیشن reveal */
+.botcard, .sec-head, .bots-grid, .hero-bot-bar {
+  opacity: 1 !important;
+  transform: none !important;
+  visibility: visible !important;
+}
+
+/* نوار سریع ربات‌ها در هیرو */
+.hero-bot-bar {
+  margin-top: 24px;
+  background: rgba(15, 23, 34, 0.85);
+  border: 1px solid rgba(255, 107, 0, 0.4);
+  border-radius: 14px;
+  padding: 14px 18px;
+  max-width: 650px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  animation: fadeIn 0.5s ease both;
+}
+.hero-bot-bar .hbb-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--acc2);
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+.hero-bot-bar .hbb-links {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.hero-bot-bar .btn.bale {
+  background: linear-gradient(135deg, #1d72b8, #0e4c82);
+  border: 1px solid #38a1ff;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 14px rgba(29, 114, 184, 0.4);
+}
+.hero-bot-bar .btn.tg-btn {
+  background: linear-gradient(135deg, #229ed9, #1377a7);
+  border: 1px solid #6cd2ff;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 14px rgba(34, 158, 217, 0.4);
+}
+.hbb-badge {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+/* دکمه‌های ورود و حساب درون منوی موبایل (Mainnav Mobile Actions) */
+.mainnav-mob-actions {
+  display: none;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.15);
+  flex-direction: column;
+  gap: 8px;
+}
+@media(max-width: 768px) {
+  .mainnav-mob-actions {
+    display: flex;
+  }
+}
+.mob-user-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 107, 0, 0.1);
+  border: 1px solid rgba(255, 107, 0, 0.3);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #fff;
+}
+.mob-nav-act-btn {
+  display: block;
+  text-align: center;
+  padding: 11px 16px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--txt);
+  transition: all .2s;
+}
+.mob-nav-act-btn.primary {
+  background: var(--grad);
+  color: #07090d;
+  font-weight: 800;
+  border: none;
+  box-shadow: 0 6px 18px rgba(255, 107, 0, 0.4);
+}
+.mob-nav-act-btn.adm {
+  background: rgba(255, 71, 87, 0.15);
+  border-color: rgba(255, 71, 87, 0.4);
+  color: #ff8b96;
+}
+.mob-nav-act-btn.bad {
+  background: transparent;
+  color: var(--mut);
+  border-color: transparent;
+}
+.mob-nav-act-btn.bale {
+  background: #1d72b8;
+  color: #fff;
+  border-color: #38a1ff;
+}
+.mob-nav-act-btn.tg {
+  background: #229ed9;
+  color: #fff;
+  border-color: #6cd2ff;
+}
+
+/* پولس دکمه ورود در تاپ‌بار برای جلب توجه */
+.pulse-btn {
+  animation: pulseGlow 2.5s infinite;
+}
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 0, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 107, 0, 0); }
+}
+
+/* ریسپانسیو اختصاصی تاپ‌بار در موبایل‌های کوچک */
+@media(max-width: 480px) {
+  .topbar {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .brand-text b {
+    font-size: 14px;
+  }
+  .brand-text small {
+    display: none;
+  }
+  .topbar-controls {
+    gap: 4px;
+  }
+  .tctrl-btn {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+}

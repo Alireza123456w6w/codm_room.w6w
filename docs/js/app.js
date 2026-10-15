@@ -335,6 +335,7 @@ async function api(path, opts = {}) {
   const h = { 'Content-Type': 'application/json' };
   if (S.token) h['Authorization'] = 'Bearer ' + S.token;
 
+  // 1. Direct Cloudflare Worker API call
   if (S.api) {
     try {
       const r = await fetch(S.api + path, {
@@ -342,28 +343,64 @@ async function api(path, opts = {}) {
         headers: h,
         body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
       });
-      if (r.ok || r.status < 500) {
-        const data = await r.json();
-        if (data && data.ok) return data;
+      const data = await r.json();
+      if (data && data.ok) return data;
+      if (data && !data.ok) {
+        if (r.status === 401 && S.token) logout(false);
+        const err = new Error(data.error || 'خطای ورکر');
+        err.data = data;
+        if (!opts.silent) toast(data.error || 'خطایی رخ داد', 'err');
+        throw err;
       }
-    } catch (e) {}
+    } catch (e) {
+      if (e.data) throw e;
+    }
   }
 
-  // Local express proxy
-  const localRes = await fetch(path, {
-    method: opts.method || 'GET',
-    headers: h,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
-  });
-  const localData = await localRes.json();
-  if (!localData.ok) {
-    if (localRes.status === 401 && S.token) logout(false);
-    const err = new Error(localData.error || 'خطای سرور');
-    err.data = localData;
-    if (!opts.silent) toast(localData.error || 'خطایی رخ داد', 'err');
-    throw err;
+  // 2. Local express proxy (only on local development server, never on static GitHub Pages)
+  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname.includes('run.app')) {
+    try {
+      const localRes = await fetch(path, {
+        method: opts.method || 'GET',
+        headers: h,
+        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
+      });
+      if (localRes.ok) {
+        const localData = await localRes.json();
+        if (localData && localData.ok) return localData;
+        if (localData && !localData.ok) {
+          if (localRes.status === 401 && S.token) logout(false);
+          const err = new Error(localData.error || 'خطای سرور');
+          err.data = localData;
+          if (!opts.silent) toast(localData.error || 'خطایی رخ داد', 'err');
+          throw err;
+        }
+      }
+    } catch (e) {
+      if (e.data) throw e;
+    }
   }
-  return localData;
+
+  // 3. Fallbacks for public config/stats to avoid broken UI
+  if (path === '/api/public/config') {
+    return {
+      ok: true,
+      bale_bot: (window.CODM_CFG && window.CODM_CFG.BALE_BOT_LINK) || 'https://ble.ir/codm_room_bot',
+      tg_bot: (window.CODM_CFG && window.CODM_CFG.TG_BOT_LINK) || 'https://t.me/codm_room_bot',
+      bale_bot_id: (window.CODM_CFG && window.CODM_CFG.BALE_BOT_ID) || 'codm_room_bot',
+      tg_bot_id: (window.CODM_CFG && window.CODM_CFG.TG_BOT_ID) || 'codm_room_bot'
+    };
+  }
+  if (path === '/api/public/stats') {
+    return { ok: true, users: 0, rooms: 0, entries: 0, prizesPaid: 0 };
+  }
+  if (path === '/api/rooms') {
+    return { ok: true, rooms: [] };
+  }
+
+  const genericErr = new Error('عدم دسترسی به سرور ورکر — لطفاً اتصال اینترنت را بررسی کنید');
+  if (!opts.silent) toast('عدم دسترسی به ورکر Cloudflare', 'err');
+  throw genericErr;
 }
 
 /* ─────────── ابزار UI (Toast & Modal) ─────────── */
@@ -410,6 +447,10 @@ const Reveal = {
   arm() {
     const els = document.querySelectorAll('.reveal:not(.in)');
     if (!els.length) return;
+    // Guaranteed fallback after 400ms so webviews or low-power modes never hide content
+    setTimeout(() => {
+      els.forEach((el) => el.classList.add('in'));
+    }, 400);
     if (!('IntersectionObserver' in window)) {
       els.forEach((el) => el.classList.add('in'));
       return;
@@ -422,7 +463,7 @@ const Reveal = {
             this.io.unobserve(e.target);
           }
         });
-      }, { threshold: 0.1 });
+      }, { threshold: 0.05 });
     }
     els.forEach((el) => this.io.observe(el));
   }
@@ -518,16 +559,40 @@ window.logout = logout;
 /* ─────────── هدر و دکمه‌های بالا ─────────── */
 function renderTop() {
   const el = $('#topActions');
+  const mobNavEl = $('#mainnavMobActions');
   const isEn = CUR_LANG === 'en';
+
   if (S.me) {
-    el.innerHTML = `
-      ${S.me.role === 'admin' ? `<a class="btn ghost sm" href="#/admin">🛡 <span class="topActionsAdminTxt">${t('adminPanel')}</span></a>` : ''}
-      <div class="userchip" onclick="location.hash='#/profile'" title="${isEn ? 'My Profile' : 'حساب من'}">
-        <span class="nm">${esc(S.me.display_name || S.me.username)}</span>
-        <span class="wal">${isEn ? money(S.me.wallet) + ' T' : fa(money(S.me.wallet)) + ' ت'}</span>
-      </div>`;
+    if (el) {
+      el.innerHTML = `
+        ${S.me.role === 'admin' ? `<a class="btn ghost sm" href="#/admin">🛡 <span class="topActionsAdminTxt">${t('adminPanel')}</span></a>` : ''}
+        <div class="userchip" onclick="location.hash='#/profile'" title="${isEn ? 'My Profile' : 'حساب من'}">
+          <span class="nm">${esc(S.me.display_name || S.me.username)}</span>
+          <span class="wal">${isEn ? money(S.me.wallet) + ' T' : fa(money(S.me.wallet)) + ' ت'}</span>
+        </div>`;
+    }
+    if (mobNavEl) {
+      mobNavEl.innerHTML = `
+        <div class="mob-user-summary">
+          <b>🪖 ${esc(S.me.display_name || S.me.username)}</b>
+          <span style="color:var(--acc2);font-weight:800">${isEn ? money(S.me.wallet) + ' T' : fa(money(S.me.wallet)) + ' ت'}</span>
+        </div>
+        <a href="#/profile" class="mob-nav-act-btn" onclick="$('#mainnav').classList.remove('openm')">👤 ${isEn ? 'My Profile & Wallet' : 'حساب من و کیف پول'}</a>
+        ${S.me.role === 'admin' ? `<a href="#/admin" class="mob-nav-act-btn adm" onclick="$('#mainnav').classList.remove('openm')">🛡 ${isEn ? 'Admin Headquarters' : 'پنل مدیریت'}</a>` : ''}
+        <button class="mob-nav-act-btn bad" onclick="$('#mainnav').classList.remove('openm');logout()">🚪 ${isEn ? 'Log Out' : 'خروج از حساب'}</button>
+      `;
+    }
   } else {
-    el.innerHTML = `<button class="btn sm" onclick="authModal('login')">${t('loginRegister')}</button>`;
+    if (el) {
+      el.innerHTML = `<button class="btn sm pulse-btn" onclick="authModal('login')">${t('loginRegister')}</button>`;
+    }
+    if (mobNavEl) {
+      mobNavEl.innerHTML = `
+        <button class="mob-nav-act-btn primary" onclick="$('#mainnav').classList.remove('openm');authModal('login')">🔐 ${isEn ? 'Sign In / Register' : 'ورود به حساب / ثبت‌نام'}</button>
+        <a href="https://ble.ir/codm_room_bot" target="_blank" rel="noopener" class="mob-nav-act-btn bale">💬 ${isEn ? 'Bale Bot (Receipts)' : 'ربات بله (ارسال فیش)'}</a>
+        <a href="https://t.me/codm_room_bot" target="_blank" rel="noopener" class="mob-nav-act-btn tg">📱 ${isEn ? 'Telegram Bot' : 'ربات تلگرام'}</a>
+      `;
+    }
   }
 }
 window.renderTop = renderTop;
@@ -596,9 +661,28 @@ async function viewHome() {
       <p class="sub">${t('heroSub')}</p>
       <div class="hero-cta">
         <button class="btn lg" onclick="AudioFX.play('click');location.hash='#/rooms'">${t('heroBtnRooms')}</button>
+        ${S.me ? `
+          <button class="btn ghost lg" onclick="AudioFX.play('click');location.hash='#/profile'">👤 ${isEn ? 'My Profile & Wallet' : 'حساب من و کیف پول'}</button>
+        ` : `
+          <button class="btn ghost lg pulse-btn" onclick="AudioFX.play('click');authModal('login')">🔐 ${isEn ? 'Sign In / Register' : 'ورود / ساخت حساب'}</button>
+        `}
         <button class="btn ghost lg" onclick="AudioFX.play('click');location.hash='#/meta'">${isEn ? '🔫 Meta Gunsmith' : '🔫 لوداوت‌های متای سیزن'}</button>
         <button class="btn ghost lg" onclick="AudioFX.play('click');location.hash='#/dogtag'">${isEn ? '🎖️ 3D Dogtag Card' : '🎖️ ساخت کارت گیمری'}</button>
       </div>
+
+      <!-- نوار سریع ربات‌ها درست در قلب هیرو -->
+      <div class="hero-bot-bar">
+        <div class="hbb-title">⚡ ${isEn ? 'OFFICIAL BOTS FOR PAYMENTS & NOTIFICATIONS:' : 'ربات‌های رسمی برای ثبت‌نام، پرداخت و ارسال فیش:'}</div>
+        <div class="hbb-links">
+          <a href="${cfg.bale_bot || 'https://ble.ir/codm_room_bot'}" target="_blank" rel="noopener" class="btn bale">
+            💬 ${isEn ? 'Bale Bot: @' : 'ربات رسمی بله: @'}${esc(cfg.bale_bot_id || 'codm_room_bot')} <span class="hbb-badge">${isEn ? 'RECEIPTS' : 'ارسال فیش'}</span>
+          </a>
+          <a href="${cfg.tg_bot || 'https://t.me/codm_room_bot'}" target="_blank" rel="noopener" class="btn tg-btn">
+            📱 ${isEn ? 'Telegram Bot: @' : 'ربات تلگرام: @'}${esc(cfg.tg_bot_id || 'codm_room_bot')} <span class="hbb-badge">${isEn ? 'ALERTS' : 'اطلاع‌رسانی'}</span>
+          </a>
+        </div>
+      </div>
+
       <div class="hero-badges">
         <div class="hbadge">${t('badgeReg')}</div>
         <div class="hbadge">${t('badgePay')}</div>
@@ -618,20 +702,20 @@ async function viewHome() {
     </div>
   </div>
 
-  <!-- بخش ربات‌های بله و تلگرام (منبع ثبت‌نام و پرداخت) -->
+  <!-- بخش اختصاصی ربات‌های بله و تلگرام (منبع ثبت‌نام و پرداخت) -->
   <section class="sec" style="padding-top:20px">
-    <div class="sec-head reveal">
+    <div class="sec-head">
       <h2>🤖 ${isEn ? 'OFFICIAL COMBAT BOTS' : 'ربات‌های رسمی'} <span>${isEn ? 'BALE & TELEGRAM' : 'بله و تلگرام'}</span></h2>
       <p>${isEn ? 'Register, pick slots, and upload payment receipts directly through Bale and Telegram bots with unified D1 database' : 'ثبت‌نام، انتخاب اسلات و ارسال عکس فیش پرداخت مستقیماً از طریق ربات بله و تلگرام متصل به همین دیتابیس'}</p>
     </div>
     <div class="bots-grid" style="margin:0 auto">
-      <a class="botcard reveal rv-d1" href="${cfg.bale_bot || 'https://ble.ir/codm_room_bot'}" target="_blank" rel="noopener">
+      <a class="botcard" href="${cfg.bale_bot || 'https://ble.ir/codm_room_bot'}" target="_blank" rel="noopener">
         <div class="bic">💬</div>
         <h3>${isEn ? 'Bale Combat Bot (Payment & Receipts)' : 'ربات رسمی بله (درگاه پرداخت و فیش)'}</h3>
         <div class="bid ltr">@${esc(cfg.bale_bot_id || 'codm_room_bot')}</div>
         <small>${isEn ? 'Primary channel for card-to-card receipt uploads' : 'مرکز اصلی ارسال عکس رسید کارت‌به‌کارت و تایید سریع'}</small>
       </a>
-      <a class="botcard reveal rv-d2" href="${cfg.tg_bot || 'https://t.me/codm_room_bot'}" target="_blank" rel="noopener">
+      <a class="botcard" href="${cfg.tg_bot || 'https://t.me/codm_room_bot'}" target="_blank" rel="noopener">
         <div class="bic">📱</div>
         <h3>${isEn ? 'Telegram Tournament Bot' : 'ربات رسمی تلگرام'}</h3>
         <div class="bid ltr">@${esc(cfg.tg_bot_id || 'codm_room_bot')}</div>

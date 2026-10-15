@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="theme-color" content="#07090d">
 <title>CODM ROOMS | پلتفرم روم‌های کالاف دیوتی موبایل</title>
 <meta name="description" content="پلتفرم مدیریت و شرکت در روم‌های کالاف دیوتی موبایل — چندزبانه، انیمیشن‌های سینمایی، اسلات‌مپ تاکتیکال و ابزارهای گیمری">
@@ -14,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Russo+One&display=swap">
-<link rel="stylesheet" href="css/style.css?v=15.2">
+<link rel="stylesheet" href="css/style.css?v=16.0">
 </head>
 <body>
 
@@ -51,8 +54,13 @@
     <a href="#/meta" data-nav="meta" id="navMeta">🔫 لوداوت‌های متا</a>
     <a href="#/dogtag" data-nav="dogtag" id="navDogtag">🎖️ کارت گیمری</a>
     <a href="#/help" data-nav="help" id="navHelp">📖 راهنما</a>
+    
+    <!-- دسترسی سریع موبایل درون منوی بازشونده -->
+    <div class="mainnav-mob-actions" id="mainnavMobActions"></div>
   </nav>
+
   <div class="topbar-actions" id="topActions"></div>
+
   <div class="topbar-controls">
     <button class="tctrl-btn" id="sfxToggle" title="افکت‌های صوتی تاکتیکال | Tactical Audio SFX">
       <span class="sfx-icon">🔊</span>
@@ -72,7 +80,7 @@
   <div class="ticker-content" id="tickerMarquee">
     <span class="titem">⚡ CODM ROOMS SEASON META: DL Q33 & GRAU 5.56 TOP PICKS</span>
     <span class="titem">🏆 WEEKLY SNIPER 1v1 TOURNAMENT PRIZE POOL DEPOSITED</span>
-    <span class="titem">🛡️ ANTI-CHEAT & PROOF VALIDATION ONLINE</span>
+    <span class="titem">🛡️ BALE & TELEGRAM BOT INSTANT RECEIPT VALIDATION ONLINE</span>
     <span class="titem">🎁 INVITE COMRADES VIA REFERRAL FOR 10,000 TOMAN WALLET REWARD</span>
   </div>
 </div>
@@ -108,7 +116,10 @@
     <div class="foot-col">
       <div class="brand"><span class="brand-emblem">🎯</span><span class="brand-text"><b>CODM <i>ROOMS</i></b><small>W6W PLATFORM</small></span></div>
       <p class="mut" id="footDesc">مرجع مدیریت روم‌های کالاف دیوتی موبایل — ثبت‌نام آنلاین، انتخاب موقعیت، پرداخت امن و جوایز نقدی.</p>
-      <div class="botids" id="botIds"></div>
+      <div class="botids" id="botIds">
+        <a href="https://ble.ir/codm_room_bot" target="_blank" rel="noopener">💬 ربات بله: @codm_room_bot</a>
+        <a href="https://t.me/codm_room_bot" target="_blank" rel="noopener">📱 ربات تلگرام: @codm_room_bot</a>
+      </div>
     </div>
     <div class="foot-col">
       <h4 id="footQuickTitle">⚔️ دسترسی سریع</h4>
@@ -120,6 +131,8 @@
     </div>
     <div class="foot-col" id="footLinks">
       <h4 id="footSupportTitle">🛡 پشتیبانی و کانال‌ها</h4>
+      <a href="https://ble.ir/codm_room_bot" target="_blank" rel="noopener">💬 ربات پرداخت بله</a>
+      <a href="https://t.me/codm_room_bot" target="_blank" rel="noopener">📱 ربات روم تلگرام</a>
       <a href="https://t.me/offerspishnahadat_feedbackbot" target="_blank" rel="noopener">🤖 بات پشتیبانی</a>
       <a href="https://t.me/offerspishnahadat_shop_bot" target="_blank" rel="noopener">🛒 ربات فروشگاه کانال</a>
       <a href="https://offers-pishnahadat.vercel.app" target="_blank" rel="noopener">📣 سایت کانال پیشنهادات</a>
@@ -127,7 +140,7 @@
     </div>
   </div>
   <div class="foot-bottom">
-    <div>© <span id="year"></span> CODM ROOMS W6W — <span id="footHeart">ساخته شده با 🧡 برای گیمرها</span> <span id="siteVer" class="apiver">v1.5.2 PRO</span><span id="apiVer" class="apiver"></span></div>
+    <div>© <span id="year"></span> CODM ROOMS W6W — <span id="footHeart">ساخته شده با 🧡 برای گیمرها</span> <span id="siteVer" class="apiver">v1.6.0 LIVE</span><span id="apiVer" class="apiver"></span></div>
     <div class="foot-actions">
       <button type="button" id="tacticalRadioBtn" class="fxreplay" title="بیسیم و دیالوگ‌های کالاف">📻 بیسیم کالاف (Soundboard)</button>
       <button type="button" id="fxReplay" class="fxreplay" title="پخش دوباره انیمیشن ورود">🎬 بازپخش اینترو</button>
@@ -138,7 +151,7 @@
 <div id="modalRoot"></div>
 <div id="toastRoot"></div>
 
-<script src="config.js?v=15.2"></script>
-<script src="js/app.js?v=15.2"></script>
+<script src="config.js?v=16.0"></script>
+<script src="js/app.js?v=16.0"></script>
 </body>
 </html>
