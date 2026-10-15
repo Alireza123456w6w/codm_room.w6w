@@ -370,7 +370,7 @@ async function approvePrize(db, env, prizeId, adminId) {
   await db.prepare("UPDATE prizes SET status='approved', handled_at=datetime('now') WHERE id=?1").bind(prizeId).run();
   await db.prepare('UPDATE users SET wallet = wallet + ?2 WHERE id=?1').bind(p.user_id, num(p.amount)).run();
   await db.prepare('INSERT INTO transactions (user_id,amount,kind,ref) VALUES(?1,?2,?3,?4)').bind(p.user_id, num(p.amount), 'prize', 'PRIZE#' + prizeId).run();
-  notifyUser(db, env, p.user_id, `🏆 <b>جایزه تو تایید شد!</b>\n\n💵 مبلغ: <b>${money(p.amount)} تومان</b> به کیف پولت اضافه شد.\n${p.note ? '📝 ' + esc(p.note) + '\n' : ''}\nدمت گرم قهرمان! 🔥`);
+  await notifyUser(db, env, p.user_id, `🏆 <b>جایزه تو تایید شد!</b>\n\n💵 مبلغ: <b>${money(p.amount)} تومان</b> به کیف پولت اضافه شد.\n${p.note ? '📝 ' + esc(p.note) + '\n' : ''}\nدمت گرم قهرمان! 🔥`);
   return { ok: true };
 }
 
@@ -407,7 +407,7 @@ async function applyReferral(db, env, pay) {
     await db.prepare('UPDATE users SET wallet = wallet + ?2 WHERE id=?1').bind(ownerId, amt).run();
     await db.prepare("INSERT INTO referral_uses (code,owner_id,buyer_id,room_id,amount) VALUES(?1,?2,?3,?4,?5)").bind(String(pay.ref_code_used || ''), ownerId, num(pay.user_id), num(pay.room_id) || null, amt).run();
     await db.prepare('INSERT INTO transactions (user_id,amount,kind,ref) VALUES(?1,?2,?3,?4)').bind(ownerId, amt, 'referral', 'PAY#' + num(pay.id)).run();
-    notifyUser(db, env, ownerId, `🎯 <b>کد معرف تو استفاده شد!</b>\n\n💰 <b>${money(amt)} تومان</b> به کیف پولت اضافه شد ✅\n(پرداخت ورودیِ طرفی که کد تو را زد، تایید شد)\n\n💡 با جمع شدن پاداش‌ها، ورودی روم‌های بعدی‌ات می‌تواند رایگان شود!`);
+    await notifyUser(db, env, ownerId, `🎯 <b>کد معرف تو استفاده شد!</b>\n\n💰 <b>${money(amt)} تومان</b> به کیف پولت اضافه شد ✅\n(پرداخت ورودیِ طرفی که کد تو را زد، تایید شد)\n\n💡 با جمع شدن پاداش‌ها، ورودی روم‌های بعدی‌ات می‌تواند رایگان شود!`);
   } catch (e) { /* هرگز جریان پرداخت را نشکن */ }
 }
 
@@ -1880,6 +1880,17 @@ async function handleBotMessage(db, env, p, msg) {
     }
 
     const cleanRef = text.trim().slice(0, 60);
+    const isCasualWord = /^(سلام|درود|خوبی|چطوری|الو|داداش|داش|اوکی|باشه|باش|تایید|تایید کن|رسید|فیش|واریز کردم|واریز شد|فرستادم|حل|ممنون|مرسی|دمت گرم|ok|hi|hello|hey|done|yes|check)$/i.test(cleanRef);
+
+    // اگر متن یک پیام احوال‌پرسی یا کلمه بی‌معنی باشد
+    if (isCasualWord || cleanRef.length < 3) {
+      if (!s.data.proof) {
+        return sendBot(bBase(p), T, chatId, `📸 <b>لطفاً عکس فیش یا رسید واریز را ارسال کنید (الزامی)</b>\nاگر کد پیگیری عددی دارید نیز می‌توانید آن را ارسال کنید.\n\nبرای لغو دستور /cancel را بفرستید.`);
+      }
+      // اگر عکس قبلاً ارسال شده و کاربر پیام تصادفی/احوالپرسی داده
+      await setBState(db, p, chatId, null);
+      return sendBot(bBase(p), T, chatId, `✅ <b>رسید پرداخت شما قبلاً دریافت شده و در صف بررسی است.</b>\n🆔 شناسه پرداخت: <b>#${faNum(pay.id)}</b>\n⏳ به محض بررسی و تایید توسط مدیریت، نتیجه خودکار در همین ربات ارسال خواهد شد.`, s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }], [{ text: '👤 حساب من', callback_data: 'm:acc' }]] : mainKb(user, isAdmin));
+    }
 
     // اگر هنوز عکس رسید نفرستاده است
     if (!s.data.proof) {

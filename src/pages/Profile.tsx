@@ -1,0 +1,490 @@
+import React, { useEffect, useState } from 'react';
+import { User, Transaction, Prize } from '../types';
+import { money, fa } from '../i18n/translations';
+import { ApiService } from '../services/api';
+import { AudioFX } from '../services/audio';
+
+interface ProfileProps {
+  user: User | null;
+  onOpenAuth: () => void;
+  lang: 'fa' | 'en';
+  onToast: (msg: string, type?: 'info' | 'ok' | 'err' | 'warn') => void;
+  onUserUpdate: (u: User) => void;
+  onSelectRoom: (roomId: number) => void;
+}
+
+export const Profile: React.FC<ProfileProps> = ({
+  user,
+  onOpenAuth,
+  lang,
+  onToast,
+  onUserUpdate,
+  onSelectRoom
+}) => {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [prizes, setPrizes] = useState<Prize[]>([]);
+  const [referral, setReferral] = useState<{ uses: number; earned: number }>({ uses: 0, earned: 0 });
+  const [loading, setLoading] = useState(true);
+
+  // Profile Edit
+  const [displayName, setDisplayName] = useState(user?.display_name || '');
+  const [codmId, setCodmId] = useState(user?.codm_id || '');
+  const [newPassword, setNewPassword] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  // Topup Modal
+  const [topupModal, setTopupModal] = useState(false);
+  const [topupAmount, setTopupAmount] = useState('50000');
+  const [topupRef, setTopupRef] = useState('');
+  const [topupCardData, setTopupCardData] = useState<{ number: string; name: string; bank: string } | null>(null);
+  const [topupSubmitting, setTopupSubmitting] = useState(false);
+
+  // Bot Link Code
+  const [linkCode, setLinkCode] = useState('');
+  const [linkSubmitting, setLinkSubmitting] = useState(false);
+
+  const isEn = lang === 'en';
+
+  const loadData = () => {
+    if (!user) return;
+    setLoading(true);
+    ApiService.getMe()
+      .then((res) => {
+        onUserUpdate(res.user);
+        setEntries(res.entries || []);
+        setTransactions(res.transactions || []);
+        setPrizes(res.prizes || []);
+        if (res.referral) setReferral(res.referral);
+        setDisplayName(res.user.display_name || '');
+        setCodmId(res.user.codm_id || '');
+      })
+      .catch((err) => {
+        onToast(err.message || 'خطا در بارگذاری اطلاعات حساب', 'err');
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [user?.id]);
+
+  if (!user) {
+    return (
+      <div className="sec empty">
+        <div className="big">🔐</div>
+        <h2>{isEn ? 'Soldier Profile Locked' : 'پروفایل قفل است'}</h2>
+        <p className="mut" style={{ marginTop: '8px', marginBottom: '20px' }}>
+          {isEn
+            ? 'Sign in to access your wallet, tournament credentials, and referral bounty.'
+            : 'برای مشاهده کیف پول، بلیت‌های روم‌ها و آمار معرف وارد حساب خود شوید.'}
+        </p>
+        <button className="btn lg" onClick={onOpenAuth}>
+          {isEn ? 'Sign In / Register' : 'ورود / ثبت‌نام'}
+        </button>
+      </div>
+    );
+  }
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingProfile(true);
+    try {
+      const res = await ApiService.updateMe({
+        display_name: displayName.trim(),
+        codm_id: codmId.trim(),
+        password: newPassword ? newPassword : undefined
+      });
+      AudioFX.play('lock');
+      onUserUpdate(res.user);
+      setNewPassword('');
+      onToast(isEn ? 'Profile updated successfully!' : 'اطلاعات پروفایل با موفقیت بروزرسانی شد!', 'ok');
+    } catch (err: any) {
+      onToast(err.message || 'خطا در ذخیره پروفایل', 'err');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleTopup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = Number(topupAmount);
+    if (!amount || amount < 10000) {
+      onToast(isEn ? 'Minimum topup is 10,000 Toman' : 'حداقل مبلغ شارژ ۱۰,۰۰۰ تومان است', 'warn');
+      return;
+    }
+    setTopupSubmitting(true);
+    try {
+      const res = await ApiService.topup(amount, 'card', topupRef.trim());
+      AudioFX.play('lock');
+      if (res.card) {
+        setTopupCardData(res.card);
+      }
+      onToast(isEn ? 'Top-up request registered. Awaiting admin verification.' : 'درخواست شارژ ثبت شد و پس از تایید مدیریت به کیف پول افزوده می‌شود.', 'ok');
+      loadData();
+    } catch (err: any) {
+      onToast(err.message || 'خطا در ثبت شارژ', 'err');
+    } finally {
+      setTopupSubmitting(false);
+    }
+  };
+
+  const handleLinkBot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!linkCode.trim()) return;
+    setLinkSubmitting(true);
+    try {
+      const res = await ApiService.linkAccount(linkCode.trim());
+      AudioFX.play('lock');
+      onUserUpdate(res.user);
+      setLinkCode('');
+      onToast(isEn ? 'Bale / Telegram Bot account successfully synchronized!' : 'اکانت ربات بله / تلگرام با موفقیت به این حساب متصل شد! ✅', 'ok');
+      loadData();
+    } catch (err: any) {
+      onToast(err.message || 'خطا در اتصال به ربات', 'err');
+    } finally {
+      setLinkSubmitting(false);
+    }
+  };
+
+  const handleCopy = (txt: string, msg: string) => {
+    AudioFX.play('click');
+    navigator.clipboard.writeText(txt);
+    onToast(msg, 'ok');
+  };
+
+  return (
+    <div className="sec">
+      {/* ── خلاصه سرباز و کیف پول ── */}
+      <div
+        style={{
+          background: 'var(--panel)',
+          border: '1px solid var(--line)',
+          clipPath: 'var(--clip)',
+          padding: '28px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '20px',
+          marginBottom: '28px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+          <div
+            style={{
+              width: '64px',
+              height: '64px',
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: '32px',
+              background: 'var(--grad)',
+              clipPath: 'var(--clip-sm)'
+            }}
+          >
+            🪖
+          </div>
+          <div>
+            <h1 style={{ fontSize: '24px', fontWeight: 900 }}>
+              {user.display_name || user.username}
+            </h1>
+            <div className="mut" style={{ fontSize: '13px', marginTop: '4px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+              <span>@{user.username}</span>
+              {user.codm_id && <span>CODM: <b>{user.codm_id}</b></span>}
+              <span style={{ color: user.role === 'admin' ? '#ff8b96' : 'var(--acc2)', fontWeight: 800 }}>
+                {user.role === 'admin' ? (isEn ? '🛡️ HEAD ADMIN' : '🛡️ مدیر کل پلتفرم') : (isEn ? 'SOLDIER' : 'سرباز میدان')}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* جعبه کیف پول */}
+        <div
+          style={{
+            background: 'rgba(255,107,0,0.1)',
+            border: '1px solid rgba(255,159,26,0.4)',
+            borderRadius: '12px',
+            padding: '16px 22px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
+          }}
+        >
+          <div style={{ fontSize: '12px', color: 'var(--mut)', fontWeight: 700 }}>
+            {isEn ? 'AVAILABLE WALLET BALANCE' : 'موجودی کیف پول شما'}
+          </div>
+          <div style={{ fontSize: '26px', fontFamily: 'Russo One', color: 'var(--acc2)' }}>
+            {isEn ? `${money(user.wallet)} Toman` : `${fa(money(user.wallet))} تومان`}
+          </div>
+          <button
+            className="btn sm"
+            onClick={() => setTopupModal(true)}
+          >
+            💳 {isEn ? 'Top Up Wallet' : 'افزایش موجودی'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
+        {/* ── بلیت‌های من و اطلاعات روم‌ها ── */}
+        <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '12px', padding: '22px' }}>
+          <h3 style={{ fontSize: '17px', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>🎫</span>
+            <span>{isEn ? 'My Active Tournaments & Tickets' : 'بلیت‌ها و روم‌های رزرو شده من'}</span>
+          </h3>
+
+          {entries.length === 0 ? (
+            <p className="mut" style={{ fontSize: '13px', lineHeight: 1.8 }}>
+              {isEn
+                ? 'You have not reserved any tournament slots yet. Check out the Rooms tab to deploy!'
+                : 'در حال حاضر در هیچ رومی ثبت‌نام نکرده‌اید. برای شرکت، به بخش روم‌ها بروید.'}
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {entries.map((entry) => (
+                <div
+                  key={entry.slot_id}
+                  style={{
+                    background: 'var(--panel2)',
+                    border: '1px solid var(--line2)',
+                    borderRadius: '8px',
+                    padding: '14px',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => onSelectRoom(entry.room_id)}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                    <b style={{ fontSize: '14px' }}>{entry.title}</b>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        padding: '2px 8px',
+                        borderRadius: '100px',
+                        fontWeight: 800,
+                        background: entry.status === 'paid' ? 'rgba(46,204,113,0.2)' : 'rgba(255,192,72,0.2)',
+                        color: entry.status === 'paid' ? 'var(--good)' : 'var(--warn)'
+                      }}
+                    >
+                      {entry.status === 'paid' ? (isEn ? 'CONFIRMED' : 'قطعی شد') : (isEn ? 'PENDING' : 'در انتظار تایید')}
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: '12px', color: 'var(--mut)', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    <span>📍 {entry.team_label || (isEn ? 'Team' : 'تیم')} — {isEn ? `Seat #${entry.slot_no}` : `جایگاه #${fa(entry.slot_no)}`}</span>
+                    {entry.code_id && (
+                      <span style={{ color: 'var(--good)', fontWeight: 800 }}>
+                        🔓 Room ID: {entry.code_id} {entry.code_pass ? `| Pass: ${entry.code_pass}` : ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── سیستم کد معرف و پاداش ── */}
+        <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '12px', padding: '22px' }}>
+          <h3 style={{ fontSize: '17px', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>🎁</span>
+            <span>{isEn ? 'Referral Bounty Hub' : 'کد معرف و کسب درآمد'}</span>
+          </h3>
+
+          <p className="mut" style={{ fontSize: '13px', lineHeight: 1.8, marginBottom: '14px' }}>
+            {isEn
+              ? 'Share your unique invite code with friends. For every recruit that joins a paid tournament, you earn 10,000 Toman directly in your wallet!'
+              : 'کد اختصاصی زیر را برای دوستانت بفرست؛ به ازای هر بار ثبت‌نام قطعی آن‌ها در روم‌های پولی، ۱۰,۰۰۰ تومان پاداش به کیف پولت اضافه می‌شود.'}
+          </p>
+
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '18px' }}>
+            <div
+              style={{
+                flex: 1,
+                background: 'rgba(0,0,0,0.5)',
+                border: '1px solid var(--acc)',
+                borderRadius: '8px',
+                padding: '10px 14px',
+                fontFamily: 'Russo One',
+                fontSize: '18px',
+                color: 'var(--acc2)',
+                textAlign: 'center',
+                letterSpacing: '2px'
+              }}
+            >
+              {user.referral_code || 'W6W-CODM'}
+            </div>
+            <button
+              className="btn good"
+              onClick={() => handleCopy(user.referral_code || 'W6W-CODM', isEn ? 'Referral code copied!' : 'کد معرف کپی شد!')}
+            >
+              📋 {isEn ? 'Copy' : 'کپی'}
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center' }}>
+            <div style={{ background: 'var(--panel2)', padding: '12px', borderRadius: '8px' }}>
+              <div style={{ fontSize: '20px', fontFamily: 'Russo One', color: 'var(--acc)' }}>
+                {isEn ? referral.uses : fa(referral.uses)}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--mut)', marginTop: '4px' }}>
+                {isEn ? 'Recruits Invited' : 'دوستان دعوت‌شده'}
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--panel2)', padding: '12px', borderRadius: '8px' }}>
+              <div style={{ fontSize: '20px', fontFamily: 'Russo One', color: 'var(--good)' }}>
+                {isEn ? `${money(referral.earned)} T` : `${fa(money(referral.earned))} ت`}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--mut)', marginTop: '4px' }}>
+                {isEn ? 'Total Bounty Earned' : 'مجموع درآمد کسب‌شده'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── اتصال اکانت به ربات‌های بله و تلگرام ── */}
+        <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '12px', padding: '22px' }}>
+          <h3 style={{ fontSize: '17px', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>🔗</span>
+            <span>{isEn ? 'Synchronize Bale & Telegram Bot' : 'اتصال اکانت به ربات بله و تلگرام'}</span>
+          </h3>
+
+          <p className="mut" style={{ fontSize: '13px', lineHeight: 1.8, marginBottom: '14px' }}>
+            {isEn
+              ? 'Send /link in @codm_room_bot, paste the 6-digit sync code here, and unite your site profile with the bot.'
+              : 'در ربات بله یا تلگرام دستور /link را بفرست و کد دریافت شده را اینجا وارد کن تا اکانت سایت و ربات متصل شوند.'}
+          </p>
+
+          <form onSubmit={handleLinkBot} style={{ display: 'flex', gap: '10px' }}>
+            <input
+              className="ltr"
+              placeholder="e.g. 849201"
+              value={linkCode}
+              onChange={(e) => setLinkCode(e.target.value.toUpperCase())}
+              style={{ flex: 1 }}
+              required
+            />
+            <button
+              type="submit"
+              className="btn"
+              disabled={linkSubmitting}
+            >
+              {linkSubmitting ? '...' : (isEn ? 'Link Bot' : 'اتصال')}
+            </button>
+          </form>
+
+          <div style={{ marginTop: '14px', fontSize: '12px', color: 'var(--mut)' }}>
+            <div>💬 {isEn ? 'Bale ID:' : 'شناسه بله:'} <b>{user.bale_id ? `✅ متصل (${user.bale_id})` : '❌ متصل نیست'}</b></div>
+            <div style={{ marginTop: '4px' }}>📱 {isEn ? 'Telegram ID:' : 'شناسه تلگرام:'} <b>{user.telegram_id ? `✅ متصل (${user.telegram_id})` : '❌ متصل نیست'}</b></div>
+          </div>
+        </div>
+
+        {/* ── ویرایش مشخصات سرباز ── */}
+        <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '12px', padding: '22px' }}>
+          <h3 style={{ fontSize: '17px', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>⚙️</span>
+            <span>{isEn ? 'Profile Settings' : 'ویرایش مشخصات سرباز'}</span>
+          </h3>
+
+          <form onSubmit={handleSaveProfile}>
+            <div className="field">
+              <label>{isEn ? 'Display Name / Gamer Tag' : 'نام نمایشی / آیدی گیمری'}</label>
+              <input
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Ghost Sniper"
+              />
+            </div>
+
+            <div className="field">
+              <label>{isEn ? 'Call of Duty Mobile In-Game UID' : 'آیدی عددی کالاف دیوتی (CODM UID)'}</label>
+              <input
+                className="ltr"
+                value={codmId}
+                onChange={(e) => setCodmId(e.target.value)}
+                placeholder="67491028301"
+              />
+            </div>
+
+            <div className="field">
+              <label>{isEn ? 'Change Password (Optional)' : 'تغییر رمز عبور (اختیاری)'}</label>
+              <input
+                type="password"
+                className="ltr"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="رمز جدید..."
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="btn blk"
+              disabled={savingProfile}
+            >
+              {savingProfile ? (isEn ? 'Saving...' : 'در حال ذخیره...') : (isEn ? 'Save Changes' : 'ذخیره تغییرات')}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* ── مودال افزایش شارژ کیف پول ── */}
+      {topupModal && (
+        <div className="modal-ov" onClick={(e) => { if (e.target === e.currentTarget) setTopupModal(false); }}>
+          <div className="modal">
+            <button className="mclose" onClick={() => setTopupModal(false)} aria-label="بستن">✕</button>
+
+            <h3>💳 {isEn ? 'Top Up Wallet Balance' : 'افزایش موجودی کیف پول'}</h3>
+            <p className="msub">
+              {isEn
+                ? 'Enter the amount in Toman to deposit into your tournament wallet.'
+                : 'مبلغ مورد نظر را به تومان وارد کنید و فیش کارت به کارت را ثبت نمایید.'}
+            </p>
+
+            <form onSubmit={handleTopup}>
+              <div className="field">
+                <label>{isEn ? 'Deposit Amount (Toman)' : 'مبلغ افزایش به تومان:'}</label>
+                <input
+                  type="number"
+                  className="ltr"
+                  value={topupAmount}
+                  onChange={(e) => setTopupAmount(e.target.value)}
+                  min="10000"
+                  step="5000"
+                  required
+                />
+              </div>
+
+              <div className="field">
+                <label>{isEn ? 'Transaction Tracking Code / Ref ID:' : 'کد پیگیری تراکنش کارت‌به‌کارت:'}</label>
+                <input
+                  className="ltr"
+                  placeholder="e.g. 98124501"
+                  value={topupRef}
+                  onChange={(e) => setTopupRef(e.target.value)}
+                />
+              </div>
+
+              {topupCardData && (
+                <div style={{ background: 'rgba(255,107,0,0.1)', padding: '14px', borderRadius: '8px', border: '1px solid rgba(255,159,26,0.4)', marginBottom: '14px', fontSize: '13px' }}>
+                  <div>🏦 بانک: <b>{topupCardData.bank}</b></div>
+                  <div style={{ marginTop: '4px' }}>🔢 شماره کارت: <code style={{ color: 'var(--good)', fontWeight: 800 }}>{topupCardData.number}</code></div>
+                  <div style={{ marginTop: '4px' }}>👤 به نام: <b>{topupCardData.name}</b></div>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="btn blk lg"
+                disabled={topupSubmitting}
+              >
+                {topupSubmitting ? '...' : (isEn ? 'Submit Topup Request' : 'ثبت درخواست افزایش موجودی')}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

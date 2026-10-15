@@ -50,12 +50,18 @@ app.all('/api/*', async (req, res) => {
   }
 });
 
-// Serve static frontend assets
-app.use(express.static(path.join(__dirname, 'docs')));
+import fs from 'fs';
 
-// Fallback to docs/index.html for client-side routing
+// Serve static frontend assets (prefer dist/ from vite build)
+const staticDir = fs.existsSync(path.join(__dirname, 'dist'))
+  ? path.join(__dirname, 'dist')
+  : path.join(__dirname, 'docs');
+
+app.use(express.static(staticDir));
+
+// Fallback to index.html for client-side routing
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'docs', 'index.html'));
+  res.sendFile(path.join(staticDir, 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
