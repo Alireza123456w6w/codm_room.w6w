@@ -576,3 +576,646 @@ body.ccur input,body.ccur textarea,body.ccur select{cursor:text!important}
   #boot .boot-logo{font-size:30px}
   .boot-corners::before,.boot-corners::after{width:30px;height:30px}
 }
+
+/* ══════════════════════════════════════════════════════════
+   CODM ROOMS — TACTICAL EXTENSIONS v1.5.2 (Bilingual & Meta)
+   ══════════════════════════════════════════════════════════ */
+
+/* ── استایل زبان انگلیسی و تایپوگرافی نظامی ── */
+html[lang="en"] {
+  direction: ltr;
+}
+html[lang="en"] body {
+  font-family: 'Rajdhani', 'Russo One', -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: .3px;
+}
+html[lang="en"] .mainnav a {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: .5px;
+}
+html[lang="en"] .hero h1 {
+  font-family: 'Russo One', 'Rajdhani', sans-serif;
+  letter-spacing: .5px;
+}
+html[lang="en"] .sec-head h2 {
+  font-family: 'Russo One', sans-serif;
+  letter-spacing: 1px;
+}
+
+/* ── دکمه‌های کنترل هدر (صدا و زبان) ── */
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tctrl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(17, 22, 31, 0.85);
+  border: 1px solid var(--line2);
+  color: var(--txt);
+  padding: 6px 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .2s;
+  backdrop-filter: blur(8px);
+}
+.tctrl-btn:hover {
+  border-color: var(--acc);
+  color: var(--acc2);
+  box-shadow: 0 0 12px rgba(255,159,26,.3);
+  transform: translateY(-1px);
+}
+.tctrl-btn.active {
+  border-color: var(--acc);
+  background: rgba(255,107,0,.15);
+  color: var(--acc2);
+}
+.tctrl-btn .sfx-icon {
+  font-size: 14px;
+}
+.tctrl-btn .lang-flag {
+  font-size: 14px;
+}
+
+/* ── تیکر اخبار و رادیو تاکتیکال زیر هدر ── */
+.battle-ticker {
+  background: rgba(11, 15, 22, 0.95);
+  border-bottom: 1px solid rgba(255, 159, 26, 0.25);
+  display: flex;
+  align-items: center;
+  font-size: 11.5px;
+  overflow: hidden;
+  position: relative;
+  z-index: 40;
+  height: 32px;
+}
+.ticker-label {
+  background: var(--grad);
+  color: #07090d;
+  font-family: 'Russo One', sans-serif;
+  font-weight: 900;
+  padding: 0 14px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  letter-spacing: .5px;
+  font-size: 11px;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 100%, 0 100%);
+  flex-shrink: 0;
+  z-index: 2;
+}
+html[lang="en"] .ticker-label {
+  clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  background: #ff4757;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #ff4757;
+  animation: livePulse 1.4s infinite;
+}
+.ticker-content {
+  display: flex;
+  gap: 38px;
+  white-space: nowrap;
+  animation: tickerScroll 36s linear infinite;
+  padding-inline-start: 20px;
+  color: #9cb0c9;
+  font-family: 'Rajdhani', Vazirmatn, sans-serif;
+  font-weight: 600;
+  letter-spacing: .5px;
+}
+.ticker-content:hover {
+  animation-play-state: paused;
+}
+.titem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+@keyframes tickerScroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ── نوار ناوبری تاکتیکال پایین صفحه (موبایل) ── */
+.mob-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: rgba(7, 9, 13, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line2);
+  z-index: 90;
+  align-items: center;
+  justify-content: space-around;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  box-shadow: 0 -4px 20px rgba(0,0,0,.6);
+}
+.mob-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--mut);
+  flex: 1;
+  height: 100%;
+  transition: all .2s;
+  text-decoration: none;
+  position: relative;
+}
+.mob-nav-item.on {
+  color: var(--acc2);
+}
+.mob-nav-item.on::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 32px;
+  height: 3px;
+  background: var(--grad);
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 2px 10px rgba(255,107,0,.8);
+}
+.mob-nav-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+.mob-nav-label {
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+@media(max-width: 768px) {
+  .mob-bottom-nav {
+    display: flex;
+  }
+  body {
+    padding-bottom: 74px;
+  }
+  .mainnav {
+    display: none;
+  }
+  .mainnav.openm {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    top: 100%;
+    inset-inline: 0;
+    background: rgba(11, 15, 22, 0.98);
+    backdrop-filter: blur(20px);
+    border-bottom: 2px solid var(--acc);
+    padding: 16px 22px;
+    box-shadow: 0 20px 40px rgba(0,0,0,.8);
+    z-index: 99;
+  }
+  .burger {
+    display: block;
+  }
+  .topbar {
+    padding: 10px 14px;
+  }
+}
+
+/* ── استودیو لوداوت‌های متای سیزن (Gunsmith Meta) ── */
+.meta-studio {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+.meta-header {
+  text-align: center;
+  margin-bottom: 34px;
+}
+.meta-header h1 {
+  font-size: clamp(24px, 3.8vw, 38px);
+  font-weight: 900;
+}
+.meta-header h1 span {
+  color: var(--acc);
+}
+.meta-header p {
+  color: var(--mut);
+  font-size: 15px;
+  margin-top: 10px;
+}
+.meta-category-bar {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 30px;
+}
+.meta-gun-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 22px;
+}
+.gun-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  clip-path: var(--clip);
+  overflow: hidden;
+  transition: all .28s;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.gun-card:hover {
+  border-color: rgba(255, 159, 26, 0.6);
+  transform: translateY(-5px);
+  box-shadow: 0 14px 40px rgba(0,0,0,.6), 0 0 20px rgba(255,107,0,.2);
+}
+.gun-card-top {
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: linear-gradient(180deg, rgba(255,159,26,.06), transparent);
+}
+.gun-meta-title h3 {
+  font-size: 19px;
+  font-weight: 900;
+  font-family: 'Russo One', sans-serif;
+  color: #fff;
+}
+.gun-meta-type {
+  font-size: 12px;
+  color: var(--acc2);
+  margin-top: 4px;
+  font-weight: 700;
+}
+.gun-tier-badge {
+  background: var(--grad);
+  color: #07090d;
+  font-family: 'Russo One', sans-serif;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 900;
+  box-shadow: 0 0 12px rgba(255,107,0,.4);
+}
+.gun-blueprint-area {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: radial-gradient(circle at 50% 50%, rgba(22, 29, 41, 0.8), rgba(11, 15, 22, 0.95));
+  position: relative;
+}
+.gun-camo-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 42px;
+  height: 80px;
+  background: rgba(0,0,0,.35);
+  border: 1px dashed rgba(255,159,26,.3);
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+}
+.gun-camo-preview::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+  animation: termSweep 3s infinite;
+}
+.gun-stats-radar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.stat-name {
+  width: 75px;
+  color: var(--mut);
+  font-weight: 600;
+}
+.stat-meter {
+  flex: 1;
+  height: 6px;
+  background: var(--bg2);
+  border-radius: 100px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.stat-meter-fill {
+  height: 100%;
+  background: var(--grad);
+  border-radius: 100px;
+  transition: width 1s cubic-bezier(.22,1,.36,1);
+}
+.stat-val {
+  width: 32px;
+  text-align: end;
+  font-family: 'Russo One', sans-serif;
+  color: var(--acc);
+  font-size: 11px;
+}
+.gun-attachments-list {
+  padding: 16px 20px;
+  background: var(--panel2);
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.gun-attachments-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--acc2);
+  margin-bottom: 4px;
+}
+.attachment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: rgba(7,9,13,.5);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.att-slot {
+  color: var(--mut);
+}
+.att-name {
+  color: #fff;
+  font-weight: 700;
+}
+.gun-card-bot {
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+  margin-top: auto;
+}
+.gun-code-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.gun-code-val {
+  flex: 1;
+  background: rgba(7,9,13,.8);
+  border: 1px solid var(--line2);
+  color: var(--acc2);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: 'Russo One', monospace;
+  font-size: 12px;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+/* ── استودیو کارت گیمری و داگ‌تگ ۳D (CODM Dogtag Studio) ── */
+.dogtag-studio {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+.dogtag-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  align-items: center;
+  margin-top: 30px;
+}
+@media(max-width: 900px) {
+  .dogtag-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.dogtag-preview-wrap {
+  perspective: 1200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.dogtag-card {
+  width: min(100%, 430px);
+  aspect-ratio: 1.6 / 1;
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 25px 60px rgba(0,0,0,.85), 0 0 35px rgba(255,107,0,.3);
+  transform-style: preserve-3d;
+  transition: transform .15s ease-out;
+  border: 2px solid rgba(255,159,26,.45);
+  background: #0d121c;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+}
+.dogtag-holo-foil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  mix-blend-mode: color-dodge;
+  opacity: .5;
+  transition: opacity .3s;
+}
+.camo-damascus .dogtag-holo-foil {
+  background: linear-gradient(115deg, transparent 20%, rgba(255, 0, 128, .5) 40%, rgba(0, 200, 255, .6) 60%, rgba(255, 215, 0, .5) 80%, transparent 100%);
+  background-size: 200% 200%;
+  animation: foilWave 6s ease infinite;
+}
+.camo-diamond .dogtag-holo-foil {
+  background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.7), rgba(255,215,0,.4) 30%, transparent 70%);
+  background-size: 20px 20px;
+}
+.camo-darkmatter .dogtag-holo-foil {
+  background: linear-gradient(135deg, #7b1fa2, #e91e63, #3f51b5);
+  opacity: .35;
+  mix-blend-mode: screen;
+}
+.camo-gold .dogtag-holo-foil {
+  background: linear-gradient(135deg, rgba(255,215,0,.6), rgba(255,140,0,.4), rgba(255,255,200,.7));
+  opacity: .4;
+}
+@keyframes foilWave {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.dogtag-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  z-index: 5;
+  border-bottom: 1px solid rgba(255,255,255,.15);
+  padding-bottom: 12px;
+}
+.dogtag-brand-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Russo One', sans-serif;
+  font-size: 15px;
+  color: #fff;
+}
+.dogtag-brand-tag i {
+  color: var(--acc);
+  font-style: normal;
+}
+.dogtag-rank-badge {
+  background: rgba(255,107,0,.25);
+  border: 1px solid var(--acc);
+  color: #ffd08a;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-family: 'Russo One', sans-serif;
+  font-size: 11px;
+  letter-spacing: .5px;
+}
+.dogtag-body {
+  margin-top: 14px;
+  position: relative;
+  z-index: 5;
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+.dogtag-soldier-info h2 {
+  font-size: 26px;
+  font-weight: 900;
+  color: #fff;
+  font-family: 'Russo One', sans-serif;
+  letter-spacing: 1px;
+  text-shadow: 0 0 14px rgba(255,159,26,.6);
+  line-height: 1.1;
+}
+.dogtag-uid {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--acc2);
+  margin-top: 6px;
+  letter-spacing: 1px;
+}
+.dogtag-clan-role {
+  font-size: 12px;
+  color: #c5d3e8;
+  margin-top: 8px;
+  font-weight: 700;
+}
+.dogtag-stats-box {
+  background: rgba(0,0,0,.45);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  gap: 16px;
+}
+.dt-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.dt-stat-v {
+  font-family: 'Russo One', sans-serif;
+  font-size: 16px;
+  color: var(--acc);
+}
+.dt-stat-l {
+  font-size: 10px;
+  color: var(--mut);
+  font-weight: 700;
+}
+.dogtag-barcode {
+  position: absolute;
+  bottom: 8px;
+  inset-inline-start: 24px;
+  font-family: 'Libre Barcode 39', monospace, sans-serif;
+  font-size: 26px;
+  letter-spacing: 4px;
+  color: rgba(255,255,255,.45);
+  z-index: 5;
+  user-select: none;
+}
+.dogtag-form {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  clip-path: var(--clip);
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+/* ── مودال بیسیم و دیالوگ‌های معروف کالاف (Tactical Radio Soundboard) ── */
+.soundboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+.sfx-card {
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  padding: 16px 14px;
+  cursor: pointer;
+  transition: all .2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+.sfx-card:hover {
+  border-color: var(--acc);
+  background: rgba(255,107,0,.12);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(255,107,0,.25);
+}
+.sfx-card:active {
+  transform: scale(.95);
+}
+.sfx-icon-lg {
+  font-size: 28px;
+}
+.sfx-title {
+  font-family: 'Russo One', sans-serif;
+  font-size: 13.5px;
+  color: #fff;
+}
+.sfx-desc {
+  font-size: 11px;
+  color: var(--mut);
+}
+
+/* ── استایل اکشن‌های فوتر ── */
+.foot-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}

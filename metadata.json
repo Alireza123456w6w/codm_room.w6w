@@ -1,0 +1,6 @@
+{
+  "name": "CODM Rooms Platform",
+  "description": "پلتفرم مدیریت و شرکت در روم‌های کالاف دیوتی موبایل — چندزبانه، انیمیشن‌های سینمایی، اسلات‌مپ تاکتیکال و ابزارهای گیمری",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
