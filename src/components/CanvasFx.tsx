@@ -80,8 +80,32 @@ export const CanvasFx: React.FC = () => {
   }, []);
 
   return (
-    <div className="bg-fx">
-      <canvas ref={canvasRef} id="fxCanvas" aria-hidden="true" />
+    <div
+      className="bg-fx"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: -1,
+        pointerEvents: 'none',
+        overflow: 'hidden'
+      }}
+    >
+      <canvas
+        ref={canvasRef}
+        id="fxCanvas"
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          display: 'block'
+        }}
+      />
       <div className="grid-fx" />
       <div className="glow-fx" />
       <div className="scan-fx" />

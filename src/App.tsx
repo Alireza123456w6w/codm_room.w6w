@@ -231,6 +231,9 @@ export const App: React.FC = () => {
         onOpenSoundboard={() => setSoundboardOpen(true)}
       />
 
+      {/* ── فاصله اطمینان برای جلوگیری از پوشانده شدن متن توسط نوار پایین ── */}
+      <div className="mob-nav-safe-spacer" aria-hidden="true" />
+
       {/* ── ناوبری پایین صفحه مخصوص موبایل ── */}
       <MobileBottomNav
         currentTab={currentTab}

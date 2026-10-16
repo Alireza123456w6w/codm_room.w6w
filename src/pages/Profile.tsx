@@ -114,17 +114,23 @@ export const Profile: React.FC<ProfileProps> = ({
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPassword.length < 4) {
+    const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+    const cleanDigits = (s: string) => String(s || '').replace(/[۰-۹]/g, (d) => String(fa.indexOf(d))).replace(/[٠-٩]/g, (d) => String(ar.indexOf(d))).trim();
+    const cleanCurrent = cleanDigits(currentPassword);
+    const cleanNew = cleanDigits(newPassword);
+    const cleanConfirm = cleanDigits(confirmPassword);
+
+    if (cleanNew.length < 4) {
       onToast(isEn ? 'New password must be at least 4 characters.' : 'رمز عبور جدید باید حداقل ۴ کاراکتر باشد.', 'warn');
       return;
     }
-    if (newPassword !== confirmPassword) {
+    if (cleanNew !== cleanConfirm) {
       onToast(isEn ? 'New passwords do not match!' : 'تکرار رمز عبور جدید همخوانی ندارد!', 'err');
       return;
     }
     setChangingPassword(true);
     try {
-      const res = await ApiService.changePassword(currentPassword, newPassword);
+      const res = await ApiService.changePassword(cleanCurrent, cleanNew);
       AudioFX.play('lock');
       onUserUpdate(res.user);
       setCurrentPassword('');

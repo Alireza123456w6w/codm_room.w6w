@@ -467,7 +467,8 @@ async function apiRegister(db, env, req) {
 async function apiLogin(db, req) {
   const b = await body(req);
   const username = String(b.username || '').trim();
-  const h = await sha256(String(b.password || '') + '::codm');
+  const rawPass = numFa(String(b.password || '')).trim();
+  const h = await sha256(rawPass + '::codm');
   const u = await db.prepare('SELECT * FROM users WHERE LOWER(username)=LOWER(?1)').bind(username).first();
   if (!u || u.password_hash !== h) return j({ ok: false, error: 'نام کاربری یا رمز عبور اشتباه است' }, 401);
   if (u.banned) return j({ ok: false, error: 'حساب شما مسدود شده است' }, 403);
@@ -491,8 +492,8 @@ async function apiMePassword(db, req) {
   const u = await authUser(db, req);
   if (!u) return j({ ok: false, error: 'unauthorized' }, 401);
   const b = await body(req);
-  const curPass = String(b.current_password || b.old_password || '');
-  const newPass = String(b.new_password || b.password || '');
+  const curPass = numFa(String(b.current_password || b.old_password || '')).trim();
+  const newPass = numFa(String(b.new_password || b.password || '')).trim();
   if (!newPass || newPass.length < 4) {
     return j({ ok: false, error: 'رمز عبور جدید باید حداقل ۴ کاراکتر باشد' }, 400);
   }
@@ -509,6 +510,36 @@ async function apiMePassword(db, req) {
   await db.prepare('UPDATE users SET password_hash=?2 WHERE id=?1').bind(u.id, newH).run();
   const nu = await db.prepare('SELECT * FROM users WHERE id=?1').bind(u.id).first();
   return j({ ok: true, message: 'رمز عبور با موفقیت تغییر یافت ✅', user: pubUser(nu) });
+}
+
+async function apiResetPassword(db, env, req) {
+  const b = await body(req);
+  const username = String(b.username || '').trim();
+  const botId = numFa(String(b.bot_id || b.chat_id || '')).trim();
+  const rawPass = numFa(String(b.new_password || b.password || '')).trim();
+  if (!username || !rawPass || rawPass.length < 4) {
+    return j({ ok: false, error: 'نام کاربری و رمز جدید (حداقل ۴ کاراکتر) الزامی است' }, 400);
+  }
+  const u = await db.prepare('SELECT * FROM users WHERE LOWER(username)=LOWER(?1)').bind(username).first();
+  if (!u) return j({ ok: false, error: 'کاربری با این نام کاربری یافت نشد' }, 404);
+  if (u.banned) return j({ ok: false, error: 'حساب شما مسدود شده است' }, 403);
+
+  if (u.telegram_id || u.bale_id) {
+    const isMatch = (u.telegram_id && String(u.telegram_id) === botId) || (u.bale_id && String(u.bale_id) === botId);
+    if (!isMatch) {
+      return j({ ok: false, error: 'شناسه عددی ربات (Chat ID) با این نام کاربری همخوانی ندارد. می‌توانید با ارسال دستور /myid در ربات بله یا تلگرام، شناسه خود را ببینید.' }, 400);
+    }
+  } else if (!botId) {
+    return j({ ok: false, error: 'شناسه عددی ربات برای تایید هویت الزامی است' }, 400);
+  }
+
+  const newH = await sha256(rawPass + '::codm');
+  await db.prepare('UPDATE users SET password_hash=?2 WHERE id=?1').bind(u.id, newH).run();
+  const token = rid(32);
+  await db.prepare("INSERT INTO sessions (token,user_id,expires_at) VALUES(?1,?2,datetime('now','+30 days'))").bind(token, u.id).run();
+  keep(notifyUser(db, env, u.id, `🔐 <b>رمز عبور حساب سایت شما تغییر کرد</b>\n━━━━━━━━━━━━━━━━━━\n📛 نام کاربری: <code>${esc(u.username)}</code>\n🔑 رمز عبور جدید: <code>${esc(rawPass)}</code>`).catch(() => {}));
+  const nu = await db.prepare('SELECT * FROM users WHERE id=?1').bind(u.id).first();
+  return j({ ok: true, token, user: pubUser(nu), message: 'رمز عبور با موفقیت تغییر یافت ✅' });
 }
 
 async function apiMeUpdate(db, req) {
@@ -956,6 +987,7 @@ async function apiWebhookSet(db, env, req, origin) {
 const BOT_COMMANDS = [
   { command: 'start', description: '🚀 شروع و منوی اصلی' },
   { command: 'help', description: '📖 راهنما' },
+  { command: 'password', description: '🔑 تغییر یا تنظیم رمز سایت' },
   { command: 'link', description: '🔗 اتصال به حساب سایت' },
   { command: 'mycode', description: '🎯 کد معرف من' },
   { command: 'myid', description: '🆔 شناسه عددی من' },
@@ -1237,9 +1269,9 @@ async function showMyCode(db, env, p, chatId, msgId, u) {
 async function editOrSend(db, env, p, chatId, msgId, text, kb) {
   if (msgId) {
     const r = await editBot(bBase(p), bToken(env, await getSettings(db), p), chatId, msgId, text, kb);
-    if (r.ok) return;
+    if (r && r.ok) return r;
   }
-  sendBot(bBase(p), bToken(env, await getSettings(db), p), chatId, text, kb);
+  return await sendBot(bBase(p), bToken(env, await getSettings(db), p), chatId, text, kb);
 }
 
 /* ─────────────── هسته عضویت (مشترک سایت + ربات‌ها) ───────────────
@@ -1830,9 +1862,10 @@ async function handleBotMessage(db, env, p, msg) {
   if (cmd === 'cancel') { await setBState(db, p, chatId, null); return sendBot(bBase(p), bToken(env, st0, p), chatId, '❌ عملیات لغو شد.', mainKb(user, isAdmin)); }
   if (cmd === 'link') return showLinkCode(db, env, p, chatId, null, user);
   if (cmd === 'mycode') return showMyCode(db, env, p, chatId, null, user);
-  if (cmd === 'password' || cmd === 'pass' || cmd === 'chpass') {
+  if (cmd === 'password' || cmd === 'pass' || cmd === 'chpass' || text === 'رمز' || text === 'تغییر رمز' || text === 'پسورد') {
     await setBState(db, p, chatId, { flow: 'pass', data: {} });
-    return sendBot(bBase(p), bToken(env, st0, p), chatId, `🔑 <b>تنظیم یا تغییر رمز ورود به سایت</b>\n\nیک رمز عبور جدید (حداقل ۴ کاراکتر) ارسال کن تا با نام کاربری <code>${esc(user.username)}</code> بتوانی وارد سایت شوی.\n\nبرای لغو دستور /cancel را بزن.`);
+    const hasPass = !!user.password_hash;
+    return sendBot(bBase(p), bToken(env, st0, p), chatId, `🔑 <b>${hasPass ? 'تغییر رمز ورود به سایت' : 'تنظیم رمز ورود به سایت'}</b>\n━━━━━━━━━━━━━━━━━━\n📛 نام کاربری شما: <code>${esc(user.username)}</code>\n\nلطفاً رمز عبور جدید خود را (حداقل ۴ کاراکتر) همین‌جا ارسال کنید:\n\n💡 اگر ارقام را فارسی تایپ کنید، خودکار به انگلیسی تبدیل خواهند شد.\n(برای انصراف دستور /cancel را بفرستید)`, [[{ text: '❌ انصراف', callback_data: 'm:acc' }]]);
   }
   if (cmd === 'admin') { if (isAdmin) return showAdminPanel(db, env, p, chatId, null); }
 
@@ -1848,10 +1881,12 @@ async function handleBotMessage(db, env, p, msg) {
     return sendBot(bBase(p), T, chatId, '👇 از منوی زیر استفاده کن:', mainKb(user, isAdmin));
   }
   if (s.flow === 'pass') {
-    if (text.length < 4) return sendBot(bBase(p), T, chatId, '⚠️ رمز عبور باید حداقل ۴ کاراکتر باشد. لطفاً دوباره بفرست (یا /cancel برای لغو):');
-    await db.prepare('UPDATE users SET password_hash=?2 WHERE id=?1').bind(user.id, await sha256(text + '::codm')).run();
+    const cleanPass = numFa(text).trim();
+    if (cleanPass.length < 4) return sendBot(bBase(p), T, chatId, '⚠️ رمز عبور باید حداقل ۴ کاراکتر باشد. لطفاً دوباره بفرستید (یا /cancel برای لغو):');
+    const h = await sha256(cleanPass + '::codm');
+    await db.prepare('UPDATE users SET password_hash=?2 WHERE id=?1').bind(user.id, h).run();
     await setBState(db, p, chatId, null);
-    return sendBot(bBase(p), T, chatId, `✅ <b>رمز ورود به سایت با موفقیت تنظیم شد!</b>\n━━━━━━━━━━━━━━━━━━\n🌐 ورود به سایت:\n📛 نام کاربری: <code>${esc(user.username)}</code>\n🔑 رمز عبور جدید: همان رمزی که ارسال کردید\n\nحالا می‌توانید در سایت با این نام کاربری و رمز وارد شوید.`, mainKb(user, isAdmin));
+    return sendBot(bBase(p), T, chatId, `✅ <b>رمز ورود به سایت با موفقیت تغییر کرد!</b>\n━━━━━━━━━━━━━━━━━━\n🌐 ورود به سایت:\n📛 نام کاربری: <code>${esc(user.username)}</code>\n🔑 رمز عبور جدید: <code>${esc(cleanPass)}</code>\n\nاکنون می‌توانید در سایت با این نام کاربری و رمز وارد شوید.`, mainKb(user, isAdmin));
   }
   /* وارد کردن کد معرف در ربات */
   if (s.flow === 'refjoin') {
@@ -2043,9 +2078,10 @@ async function apiRoute(req, env, db, url) {
     if (p === '/api/webhook/status') return apiWebhookStatus(db, env, req, origin);
   }
   if (m === 'POST') {
-    if (p === '/api/register') return apiRegister(db, env, req);
-    if (p === '/api/login') return apiLogin(db, req);
-    if (p === '/api/logout') {
+    if (p === '/api/register' || p === '/api/auth/register') return apiRegister(db, env, req);
+    if (p === '/api/login' || p === '/api/auth/login') return apiLogin(db, req);
+    if (p === '/api/reset-password' || p === '/api/auth/reset-password') return apiResetPassword(db, env, req);
+    if (p === '/api/logout' || p === '/api/auth/logout') {
       const tk = (req.headers.get('Authorization') || '').match(/^Bearer (.+)$/);
       if (tk) await db.prepare('DELETE FROM sessions WHERE token=?1').bind(tk[1]).run();
       return j({ ok: true });

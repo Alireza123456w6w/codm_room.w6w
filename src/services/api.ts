@@ -263,6 +263,15 @@ export class ApiService {
     });
   }
 
+  public static async resetPassword(username: string, botId: string, newPassword: string): Promise<{ token: string; user: User; message: string }> {
+    const res = await this.request<{ ok: boolean; token: string; user: User; message: string }>('/api/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ username, bot_id: botId, new_password: newPassword })
+    });
+    this.setToken(res.token);
+    return res;
+  }
+
   public static async topup(amount: number, method: 'card' | 'online', refCode?: string) {
     return this.request('/api/topup', {
       method: 'POST',
