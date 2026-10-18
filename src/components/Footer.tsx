@@ -92,7 +92,7 @@ export const Footer: React.FC<FooterProps> = ({
         <div>
           © {new Date().getFullYear()} CODM ROOMS W6W —{' '}
           <span>{isEn ? 'Built with 🧡 for competitive mobile gamers' : 'ساخته شده با 🧡 برای گیمرها'}</span>{' '}
-          <span className="apiver">v1.6.0 REACT</span>
+          <span className="apiver">v2.2.0 TACTICAL ELITE</span>
         </div>
         <div className="foot-actions">
           <button

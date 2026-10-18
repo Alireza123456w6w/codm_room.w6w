@@ -59,6 +59,7 @@ export interface Payment {
   ref_code?: string;
   proof_file_id?: string;
   proof_platform?: string;
+  proof_image?: string;
   status: 'pending' | 'approved' | 'rejected';
   kind: 'entry' | 'topup';
   created_at?: string;

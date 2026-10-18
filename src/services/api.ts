@@ -205,10 +205,10 @@ export class ApiService {
     });
   }
 
-  public static async submitPaymentRef(paymentId: number, refCode: string) {
+  public static async submitPaymentRef(paymentId: number, refCode?: string, proofImage?: string) {
     return this.request(`/api/payments/${paymentId}/ref`, {
       method: 'POST',
-      body: JSON.stringify({ ref_code: refCode })
+      body: JSON.stringify({ ref_code: refCode || '', proof_image: proofImage || '' })
     });
   }
 
@@ -286,6 +286,17 @@ export class ApiService {
     });
   }
 
+  public static async getMetaWeapons(): Promise<{ weapons: any[] | null }> {
+    return this.request('/api/meta');
+  }
+
+  public static async saveMetaWeapons(weapons: any[]): Promise<{ ok: boolean; weapons: any[] }> {
+    return this.request('/api/meta', {
+      method: 'POST',
+      body: JSON.stringify({ weapons })
+    });
+  }
+
   // Admin APIs
   public static async getAdminStats(): Promise<AdminStats> {
     return this.request<AdminStats>('/api/stats');
@@ -302,6 +313,10 @@ export class ApiService {
 
   public static async rejectPayment(id: number) {
     return this.request(`/api/payments/${id}/reject`, { method: 'POST' });
+  }
+
+  public static async getPaymentPhoto(id: number) {
+    return this.request<{ ok: boolean; url?: string; type?: string; file_id?: string }>(`/api/payments/${id}/photo`);
   }
 
   public static async getPrizes(): Promise<Prize[]> {

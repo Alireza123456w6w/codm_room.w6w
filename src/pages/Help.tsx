@@ -50,8 +50,8 @@ export const Help: React.FC<HelpProps> = ({ lang }) => {
           </h3>
           <p className="mut" style={{ lineHeight: 2, fontSize: '14px' }}>
             {isEn
-              ? 'You can pay using wallet balance or card-to-card. For card payments, transfer the exact fee and send the receipt photo or tracking code to our official Bale bot (@codm_room_bot). Once approved by admin, you will receive an automated confirmation message right inside the bot!'
-              : 'پرداخت از طریق موجودی کیف پول یا کارت‌به‌کارت انجام می‌شود. برای واریز کارت‌به‌کارت، مبلغ دقیق ورودی را انتقال داده و عکس رسید یا کد پیگیری را در ربات رسمی بله (@codm_room_bot) بفرستید. به محض تایید توسط مدیریت، یک پیام تاییدیه خودکار در همان ربات برای شما ارسال می‌شود.'}
+              ? 'You can pay using wallet balance or card-to-card. For card payments, transfer the exact fee and send the receipt photo to our official Bale bot (@codm_room_bot). Because text-only tracking codes cannot be verified, sending the receipt photo is strictly required. Once verified, you will receive an automated confirmation message right inside the bot!'
+              : 'پرداخت از طریق موجودی کیف پول یا کارت‌به‌کارت انجام می‌شود. برای واریز کارت‌به‌کارت، مبلغ دقیق ورودی را انتقال داده و عکس فیش رسید واریز را در ربات رسمی بله (@codm_room_bot) بفرستید (به دلیل غیرقابل پیگیری بودن کدهای پیگیری متنی، ارسال تصویر رسید الزامی است). به محض بررسی و تایید توسط مدیریت، پیام تاییدیه خودکار در همان ربات برای شما ارسال می‌شود.'}
           </p>
         </div>
 

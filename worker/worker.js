@@ -15,7 +15,7 @@
      /setup              →  صفحه اتصال سریع وب‌هوک‌ها
    ══════════════════════════════════════════════════════════════ */
 
-const V = '1.5.0';
+const V = '2.2.0';
 const TG_BASE = 'https://api.telegram.org';
 const BL_BASE = 'https://tapi.bale.ai';
 const FA_D = '۰۱۲۳۴۵۶۷۸۹';
@@ -42,7 +42,7 @@ const MODES = {
 };
 const TEAM_NAMES = ['تیم آ', 'تیم ب', 'تیم ج', 'تیم د', 'تیم هـ', 'تیم و'];
 const ROOM_STATUS = { open: '🟢 باز', full: '🟡 تکمیل ظرفیت', running: '🔴 در حال اجرا', finished: '⚫️ پایان یافت', cancelled: '❌ لغو شد' };
-const SET_KEYS = ['tg_token','bale_token','admin_secret','card_number','card_name','bank_name','gateway_url','channel_link','support_bot','website_url','offers_site','offers_page','shop_bot','min_topup','welcome','announce_channel','bale_bot_link','tg_bot_link','tg_bot_id','bale_bot_id','referral_reward'];
+const SET_KEYS = ['tg_token','bale_token','admin_secret','card_number','card_name','bank_name','gateway_url','channel_link','support_bot','website_url','offers_site','offers_page','shop_bot','min_topup','welcome','announce_channel','bale_bot_link','tg_bot_link','tg_bot_id','bale_bot_id','referral_reward','meta_weapons'];
 const BC_BATCH = 20;
 
 /* ─────────────── execution context (waitUntil) ─────────────── */
@@ -92,6 +92,7 @@ async function migrateDB(db) {
   const cols = [
     'ALTER TABLE payments ADD COLUMN proof_file_id TEXT',
     'ALTER TABLE payments ADD COLUMN proof_platform TEXT',
+    'ALTER TABLE payments ADD COLUMN proof_image TEXT',
     'ALTER TABLE users ADD COLUMN referral_code TEXT',
     'ALTER TABLE payments ADD COLUMN ref_owner_id INTEGER',
     'ALTER TABLE payments ADD COLUMN ref_amount REAL',
@@ -441,6 +442,26 @@ async function apiPublicConfig(db, env) {
   });
 }
 
+async function apiMetaWeaponsGet(db) {
+  const st = await getSettings(db);
+  const raw = stg(st, 'meta_weapons', '');
+  let list = null;
+  if (raw) {
+    try { list = JSON.parse(raw); } catch (e) {}
+  }
+  return j({ ok: true, weapons: list });
+}
+
+async function apiMetaWeaponsSet(db, req) {
+  const u = await authUser(db, req);
+  if (!u || u.role !== 'admin') return j({ ok: false, error: 'دسترسی ادمین لازم است' }, 403);
+  const b = await body(req);
+  const weapons = b.weapons;
+  if (!Array.isArray(weapons)) return j({ ok: false, error: 'لیست نامعتبر است' }, 400);
+  await setSetting(db, 'meta_weapons', JSON.stringify(weapons));
+  return j({ ok: true, weapons });
+}
+
 /* ─────────────── API: احراز هویت ─────────────── */
 async function apiRegister(db, env, req) {
   const b = await body(req);
@@ -513,8 +534,13 @@ async function apiMePassword(db, req) {
 }
 
 async function apiResetPassword(db, env, req) {
+  // تا زمانی که کاربر وارد نشده است، امکان تغییر رمز از طریق سایت وجود ندارد
+  const sessionUser = await authUser(db, req);
+  if (!sessionUser) {
+    return j({ ok: false, error: 'برای تغییر رمز عبور در سایت، ابتدا باید وارد حساب کاربری خود شوید.' }, 401);
+  }
   const b = await body(req);
-  const username = String(b.username || '').trim();
+  const username = String(b.username || sessionUser.username || '').trim();
   const botId = numFa(String(b.bot_id || b.chat_id || '')).trim();
   const rawPass = numFa(String(b.new_password || b.password || '')).trim();
   if (!username || !rawPass || rawPass.length < 4) {
@@ -765,13 +791,17 @@ async function apiTopup(db, env, req) {
   if (method === 'online' && !stg(st, 'gateway_url', '')) return j({ ok: false, error: 'درگاه پرداخت فعلاً فعال نیست' }, 400);
   const pr = await db.prepare("INSERT INTO payments (user_id,amount,method,ref_code,status,kind) VALUES(?1,?2,?3,?4,'pending','topup')").bind(u.id, amount, method, String(b.ref_code || '').slice(0, 60)).run();
   notifyAdmins(db, env, `🔔 <b>درخواست شارژ کیف پول</b>\n\n👤 ${esc(u.display_name || u.username)}\n💰 مبلغ: ${money(amount)} تومان\nروش: ${method === 'card' ? 'کارت‌به‌کارت' : 'درگاه'}${b.ref_code ? '\n🧾 کد: ' + esc(b.ref_code) : ''}`);
-  const resp = { ok: true, payment_id: pr.meta.last_row_id, message: 'درخواست شارژ ثبت شد و پس از تایید مدیریت، کیف پولت شارژ می‌شود.' };
-  if (method === 'card') resp.card = { number: stg(st, 'card_number', ''), name: stg(st, 'card_name', ''), bank: stg(st, 'bank_name', '') };
+  const resp = { ok: true, payment_id: pr.meta.last_row_id, message: 'درخواست شارژ ثبت شد و پس از ارسال و تایید عکس فیش، کیف پولت شارژ می‌شود.' };
+  if (method === 'card') {
+    resp.card = { number: stg(st, 'card_number', ''), name: stg(st, 'card_name', ''), bank: stg(st, 'bank_name', '') };
+    const bLink = await botPublicLink(db, env, st, 'bale');
+    if (bLink) resp.bot_link = bLink + (bLink.includes('?') ? '&' : '?') + 'start=pay_' + pr.meta.last_row_id;
+  }
   if (method === 'online') resp.gateway_url = String(stg(st, 'gateway_url', '')).replace('{amount}', String(amount)).replace('{desc}', encodeURIComponent('Topup'));
   return j(resp);
 }
 
-/* ثبت کد پیگیری پرداخت توسط صاحب پرداخت (سایت) */
+/* ثبت عکس رسید پرداخت توسط صاحب پرداخت (سایت — عکس رسید الزامی است) */
 async function apiPaymentRef(db, env, req, payId) {
   const u = await authUser(db, req);
   if (!u) return j({ ok: false, error: 'unauthorized' }, 401);
@@ -779,10 +809,41 @@ async function apiPaymentRef(db, env, req, payId) {
   const pay = await db.prepare('SELECT * FROM payments WHERE id=?1 AND user_id=?2').bind(payId, u.id).first();
   if (!pay) return j({ ok: false, error: 'پرداخت یافت نشد' }, 404);
   if (pay.status !== 'pending') return j({ ok: false, error: 'این پرداخت قبلاً بررسی شده' }, 400);
-  await db.prepare('UPDATE payments SET ref_code=?2 WHERE id=?1').bind(payId, String(b.ref_code || '').slice(0, 60)).run();
+  const proofImage = String(b.proof_image || b.image || '');
+  if (!proofImage) {
+    return j({ ok: false, error: 'ارسال تصویر یا عکس رسید واریز الزامی است. پیگیری و تایید تراکنش تنها با کد متنی امکان‌پذیر نیست.' }, 400);
+  }
+  const refCode = String(b.ref_code || '').slice(0, 60);
+  await db.prepare('UPDATE payments SET ref_code=CASE WHEN ?2<>"" THEN ?2 ELSE ref_code END, proof_image=?3, proof_platform="web" WHERE id=?1')
+    .bind(payId, refCode, proofImage).run();
   const st = await getSettings(db);
-  notifyAdmins(db, env, `🧾 <b>رسید پرداخت ثبت شد</b>\n\n#${faNum(payId)} | ${pay.kind === 'topup' ? '💰 شارژ' : '🎮 ورودی روم'} | ${money(pay.amount)} ت\n👤 ${esc(u.display_name || u.username)}\n🆔 کد پیگیری: <code>${esc(String(b.ref_code || '').slice(0, 60))}</code>\n\nاز پنل مدیریت تایید کنید.`);
-  return j({ ok: true });
+  notifyAdmins(db, env, `📸 <b>رسید پرداخت جدید (همراه عکس فیش واریز)</b>\n\n#${faNum(payId)} | ${pay.kind === 'topup' ? '💰 شارژ' : '🎮 ورودی روم'} | ${money(pay.amount)} تومان\n👤 ${esc(u.display_name || u.username)}${refCode ? '\n🆔 کد پیگیری: <code>' + esc(refCode) + '</code>' : ''}\n\nتصویر فیش در پنل مدیریت سایت و ربات بله قابل مشاهده است.`);
+  return j({ ok: true, message: 'عکس فیش با موفقیت ثبت شد و در صف بررسی مدیریت قرار گرفت.' });
+}
+
+/* دریافت تصویر رسید پرداخت برای پنل مدیریت */
+async function apiPaymentPhoto(db, env, req, payId) {
+  const u = await authUser(db, req);
+  if (!u || u.role !== 'admin') return j({ ok: false, error: 'دسترسی ادمین لازم است' }, 403);
+  const pay = await db.prepare('SELECT * FROM payments WHERE id=?1').bind(payId).first();
+  if (!pay) return j({ ok: false, error: 'پرداخت یافت نشد' }, 404);
+  if (pay.proof_image) {
+    return j({ ok: true, url: pay.proof_image, type: 'web' });
+  }
+  if (pay.proof_file_id) {
+    const st = await getSettings(db);
+    const tok = pay.proof_platform === 'tg' ? tgToken(env, st) : baleToken(env, st);
+    const base = pay.proof_platform === 'tg' ? TG_BASE : BL_BASE;
+    try {
+      const gf = await botCall(base, tok, 'getFile', { file_id: pay.proof_file_id });
+      if (gf && gf.ok && gf.result && gf.result.file_path) {
+        const fileUrl = `${base}/file/bot${tok}/${gf.result.file_path}`;
+        return j({ ok: true, url: fileUrl, type: pay.proof_platform || 'bale' });
+      }
+    } catch (e) {}
+    return j({ ok: true, file_id: pay.proof_file_id, platform: pay.proof_platform, type: 'bot_ref' });
+  }
+  return j({ ok: false, error: 'عکسی برای این پرداخت ثبت نشده است' }, 404);
 }
 
 /* ─────────────── API: ادمین — پرداخت‌ها ─────────────── */
@@ -1337,7 +1398,11 @@ async function joinCore(db, env, u, roomId, slotNo, method, refCode) {
   notifyAdmins(db, env, `🔔 <b>درخواست ثبت‌نام جدید</b>\n\n👤 ${esc(u.display_name || u.username)}\n🎮 روم: ${esc(room.title)}\n💰 مبلغ: ${money(fee)} تومان\nروش: ${method === 'card' ? 'کارت‌به‌کارت' : 'درگاه'}${refOwner ? '\n🎯 کد معرف: <code>' + esc(rc) + '</code> (پس از تایید، پاداش داده شود)' : ''}`);
   const resp = { ok: true, status: 'pending', payment_id: pr.meta.last_row_id, fee, message: 'موقعیت شما موقتاً رزرو شد. پس از تایید پرداخت، قطعی می‌شود.' };
   if (refOwner) resp.referral = { code: rc, owner: refOwner.display_name || refOwner.username, reward: refAmt };
-  if (method === 'card') resp.card = { number: stg(st, 'card_number', ''), name: stg(st, 'card_name', ''), bank: stg(st, 'bank_name', '') };
+  if (method === 'card') {
+    resp.card = { number: stg(st, 'card_number', ''), name: stg(st, 'card_name', ''), bank: stg(st, 'bank_name', '') };
+    const bLink = await botPublicLink(db, env, st, 'bale');
+    if (bLink) resp.bot_link = bLink + (bLink.includes('?') ? '&' : '?') + 'start=pay_' + pr.meta.last_row_id;
+  }
   if (method === 'online') resp.gateway_url = String(stg(st, 'gateway_url', '')).replace('{amount}', String(fee)).replace('{desc}', encodeURIComponent('Room#' + roomId));
   return resp;
 }
@@ -1769,14 +1834,14 @@ async function cbDispatch(db, env, p, cb, ans, st0) {
   }
 }
 
-/* ثبت عکس رسید پرداخت (الزامی) — کد پیگیری از کپشن عکس اختیاری است */
+/* ثبت عکس رسید پرداخت (الزامی) — کد پیگیری از کپشن عکس یا متن قبلی */
 async function handlePayProof(db, env, p, chatId, user, s, msg) {
   const T = bToken(env, await getSettings(db), p);
   const fileId = msg.photo[msg.photo.length - 1].file_id;
-  const cap = String(msg.caption || '').trim().slice(0, 60);
+  const cap = String(msg.caption || s?.data?.temp_ref || '').trim().slice(0, 60);
   let pid = num(s.data.payment_id);
   if (!pid && s.flow === 'topref') {
-    /* شارژ کیف پول: پرداخت هنوز ساخته نشده — با عکس رسید ساخته می‌شود */
+    /* شارژ کیف پول: پرداخت با ارسال عکس رسید ساخته می‌شود */
     const pr = await db.prepare("INSERT INTO payments (user_id,amount,method,ref_code,proof_file_id,proof_platform,status,kind) VALUES(?1,?2,?3,?4,?5,?6,'pending','topup')").bind(user.id, num(s.data.amount), s.data.method || 'card', cap, fileId, p).run();
     pid = pr.meta.last_row_id;
   } else {
@@ -1788,7 +1853,7 @@ async function handlePayProof(db, env, p, chatId, user, s, msg) {
   await setBState(db, p, chatId, s);
   const kind = pay.kind === 'topup' ? 'شارژ کیف پول' : 'ورودی روم';
   notifyProofAdmins(db, env, pay.id, `📸 <b>رسید ${kind} دریافت شد</b>\n\n#${faNum(pay.id)} | ${money(pay.amount)} تومان\n👤 ${esc(user.display_name || user.username)}`);
-  return sendBot(bBase(p), T, chatId, `✅ <b>عکس رسید ثبت شد و برای مدیریت ارسال گردید.</b>\n\n⏳ پس از بررسی، نتیجه به شما اعلام می‌شود.\n🧾 کد پیگیری اختیاری است — اگر کد تراکنش را داری همین‌جا بفرست تا ثبت شود، یا /skip را بزن.`, s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }]] : [[{ text: '👤 حساب من', callback_data: 'm:acc' }]]);
+  return sendBot(bBase(p), T, chatId, `✅ <b>عکس رسید با موفقیت ثبت شد و برای مدیریت ارسال گردید.</b>\n━━━━━━━━━━━━━━━━━━\n🆔 شناسه پرداخت: <b>#${faNum(pay.id)}</b>\n💰 مبلغ: <b>${money(pay.amount)} تومان</b>\n📸 وضعیت: در صف بررسی مدیریت\n\n🔔 به محض بررسی توسط ادمین، نتیجه تایید یا رد خودکار در همین ربات برای شما ارسال خواهد شد.`, s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }]] : [[{ text: '👤 حساب من', callback_data: 'm:acc' }]]);
 }
 
 /* ─────────────── درگاه پرداخت ربات (پل سایت ← ربات) ───────────────
@@ -1799,12 +1864,14 @@ async function handlePayBridge(db, env, p, chatId, user, payId) {
   const pay = await db.prepare('SELECT * FROM payments WHERE id=?1').bind(payId).first();
   if (!pay) { await setBState(db, p, chatId, null); return sendBot(bBase(p), T, chatId, '⚠️ <b>پرداخت یافت نشد.</b>\nممکن است لینک قدیمی باشد — لطفاً از سایت دوباره اقدام کن.'); }
   if (pay.user_id !== user.id) {
-    const isGuest = !user.password_hash && (user.username === 'P' + chatId || String(user.username).startsWith('P' + chatId + '_'));
-    if (isGuest) {
-      await sendBot(bBase(p), T, chatId, '🔗 <b>برای ثبت رسید، اول حسابت را متصل کن</b>\n━━━━━━━━━━━━━━━━━━\nاین پرداخت در حسابتِ «سایت» ثبت شده است. اگر این پرداخت مال توست:\n\n۱. همین‌جا در ربات دستور <code>/link</code> را بزن و کد اتصال را بگیر\n۲. کد را در «پروفایل» سایت، بخش اتصال ربات وارد کن\n۳. دوباره لینک پرداخت را باز کن ✅\n\nبا اتصال، موجودی و ثبت‌نام‌هایت در سایت و ربات یکی می‌شود.');
-      return showLinkCode(db, env, p, chatId, null, user);
+    const payOwner = await db.prepare('SELECT * FROM users WHERE id=?1').bind(pay.user_id).first();
+    if (payOwner) {
+      if (p === 'bale' && (!payOwner.bale_id || payOwner.bale_id === chatId)) {
+        await db.prepare('UPDATE users SET bale_id=?2 WHERE id=?1').bind(pay.user_id, chatId).run();
+      } else if (p === 'tg' && (!payOwner.telegram_id || payOwner.telegram_id === chatId)) {
+        await db.prepare('UPDATE users SET telegram_id=?2 WHERE id=?1').bind(pay.user_id, chatId).run();
+      }
     }
-    return sendBot(bBase(p), T, chatId, '⛔️ این لینک پرداخت متعلق به حساب دیگری است.');
   }
   if (pay.status !== 'pending') {
     return sendBot(bBase(p), T, chatId, `ℹ️ این پرداخت قبلاً بررسی شده است (${pay.status === 'approved' ? '✅ تایید شده' : '❌ رد شده'}).${pay.status === 'approved' ? '\nاگر ورودی روم بوده، جایگاهت قطعی است.' : '\nدر صورت نیاز دوباره از سایت اقدام کن.'}`);
@@ -1818,10 +1885,10 @@ async function handlePayBridge(db, env, p, chatId, user, payId) {
   const kb = [];
   let t;
   if (pay.method === 'online') {
-    t = `🏦 <b>پرداخت آنلاین</b>\n\n💰 مبلغ: <b>${money(pay.amount)} تومان</b>\nبا دکمه زیر به درگاه برو و پرداخت کن، سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی).\n🧾 کد پیگیری اختیاری است — در کپشن عکس یا جداگانه.`;
+    t = `🏦 <b>پرداخت آنلاین</b>\n\n💰 مبلغ: <b>${money(pay.amount)} تومان</b>\nبا دکمه زیر به درگاه برو و پرداخت کن، سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی).\n⚠️ ثبت پرداخت صرفاً با عکس فیش انجام می‌شود.`;
     kb.push([{ text: '🏦 رفتن به درگاه پرداخت', url: String(stg(st, 'gateway_url', '')).replace('{amount}', String(num(pay.amount))).replace('{desc}', encodeURIComponent(pay.kind === 'topup' ? 'Topup' : 'Room#' + pay.room_id)) }]);
   } else {
-    t = `💳 <b>پرداخت کارت به کارت</b>\n━━━━━━━━━━━━━━━━━━\n🏦 بانک: ${esc(stg(st, 'bank_name', '')) || '—'}\n🔢 شماره کارت:\n<code>${esc(stg(st, 'card_number', ''))}</code>\n👤 به نام: ${esc(stg(st, 'card_name', '')) || '—'}\n💰 مبلغ: <b>${money(pay.amount)} تومان</b>\n\n⚠️ مبلغ را دقیقاً ${money(pay.amount)} تومان واریز کن.\n📸 سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی).\n🧾 کد پیگیری اختیاری است — می‌توانی در کپشن عکس بنویسی.`;
+    t = `💳 <b>پرداخت کارت به کارت (روش رسمی و اصلی)</b>\n━━━━━━━━━━━━━━━━━━\n🏦 بانک: ${esc(stg(st, 'bank_name', '')) || '—'}\n🔢 شماره کارت:\n<code>${esc(stg(st, 'card_number', ''))}</code>\n👤 به نام: ${esc(stg(st, 'card_name', '')) || '—'}\n💰 مبلغ دقیق: <b>${money(pay.amount)} تومان</b>\n\n⚠️ <b>دستورالعمل مهم:</b>\n۱. مبلغ را دقیقاً ${money(pay.amount)} تومان به شماره کارت بالا واریز کن.\n۲. 📸 سپس <b>عکس یا تصویر رسید واریز</b> را همین‌جا بفرست (الزامی).\n\n❌ <b>توجه مهم:</b> پیگیری و تایید پرداخت‌ها با کد متنی به تنهایی امکان‌پذیر نیست و تراکنش تنها با عکس رسید تایید می‌شود.`;
   }
   if (num(pay.room_id)) kb.push([{ text: '🔙 بازگشت به روم', callback_data: `rm:${pay.room_id}` }]);
   kb.push([{ text: '👤 حساب من', callback_data: 'm:acc' }]);
@@ -1952,30 +2019,28 @@ async function handleBotMessage(db, env, p, msg) {
     // اگر متن یک پیام احوال‌پرسی یا کلمه بی‌معنی باشد
     if (isCasualWord || cleanRef.length < 3) {
       if (!s.data.proof) {
-        return sendBot(bBase(p), T, chatId, `📸 <b>لطفاً عکس فیش یا رسید واریز را ارسال کنید (الزامی)</b>\nاگر کد پیگیری عددی دارید نیز می‌توانید آن را ارسال کنید.\n\nبرای لغو دستور /cancel را بفرستید.`);
+        return sendBot(bBase(p), T, chatId, `📸 <b>لطفاً عکس یا تصویر فیش رسید واریز را ارسال کنید (الزامی)</b>\n❌ پیگیری تراکنش‌ها با کد پیگیری متنی به تنهایی امکان‌پذیر نیست.\n\nبرای لغو دستور /cancel را بفرستید.`);
       }
       // اگر عکس قبلاً ارسال شده و کاربر پیام تصادفی/احوالپرسی داده
       await setBState(db, p, chatId, null);
       return sendBot(bBase(p), T, chatId, `✅ <b>رسید پرداخت شما قبلاً دریافت شده و در صف بررسی است.</b>\n🆔 شناسه پرداخت: <b>#${faNum(pay.id)}</b>\n⏳ به محض بررسی و تایید توسط مدیریت، نتیجه خودکار در همین ربات ارسال خواهد شد.`, s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }], [{ text: '👤 حساب من', callback_data: 'm:acc' }]] : mainKb(user, isAdmin));
     }
 
-    // اگر هنوز عکس رسید نفرستاده است
+    // اگر هنوز عکس رسید نفرستاده و فقط کد پیگیری / متن فرستاده است
     if (!s.data.proof) {
-      // کد را ذخیره کن اما یادآوری کن که عکس فیش الزامی است
-      await db.prepare("UPDATE payments SET ref_code=?2 WHERE id=?1 AND status='pending'").bind(pid, cleanRef).run();
-      s.data.ref_code = cleanRef;
+      s.data.temp_ref = cleanRef;
       await setBState(db, p, chatId, s);
-      return sendBot(bBase(p), T, chatId, `🧾 <b>کد پیگیری دریافت شد:</b> <code>${esc(cleanRef)}</code>\n\n📸 <b>مرحله بعدی (الزامی):</b> لطفاً عکس رسید یا فیش واریز را همین‌جا ارسال کن تا پرداختت در صف بررسی قرار گیرد.\n(برای لغو /cancel را بفرست)`);
+      return sendBot(bBase(p), T, chatId, `⚠️ <b>ارسال تصویر یا عکس فیش رسید واریز الزامی است!</b>\n━━━━━━━━━━━━━━━━━━\n❌ <b>پیگیری و تایید تراکنش‌ها با کد پیگیری متنی به تنهایی امکان‌پذیر نیست.</b>\n\n📸 لطفاً همین الان <b>عکس یا اسکرین‌شات فیش واریز</b> را ارسال کنید تا پرداخت شما در صف بررسی مدیریت قرار گیرد.\n\n💡 کد پیگیری شما (<code>${esc(cleanRef)}</code>) موقتاً یادداشت شد و پس از ارسال عکس فیش، ضمیمه خواهد شد.\n(برای لغو دستور /cancel را بفرستید)`);
     }
 
     // عکس قبلاً ارسال شده (s.data.proof = true) و کاربر اکنون کد پیگیری را ارسال کرده است
     await db.prepare("UPDATE payments SET ref_code=?2 WHERE id=?1 AND status='pending'").bind(pid, cleanRef).run();
 
-    // مهم: استیت بات را پاک می‌کنیم تا پیام‌های بی‌معنی یا بعدی کاربر به عنوان کد پیگیری جدید شناخته نشوند!
+    // مهم: استیت بات را پاک می‌کنیم تا پیام‌های بعدی به عنوان کد پیگیری جدید شناخته نشوند!
     await setBState(db, p, chatId, null);
 
-    notifyPlatformAdmins(db, env, pay.proof_platform || p, `🧾 کد پیگیری پرداخت #${faNum(pay.id)} ثبت شد: <code>${esc(cleanRef)}</code>`);
-    return sendBot(bBase(p), T, chatId, `✅ <b>کد پیگیری با موفقیت ثبت شد!</b>\n━━━━━━━━━━━━━━━━━━\n🆔 شناسه پرداخت: <b>#${faNum(pay.id)}</b>\n🧾 کد پیگیری: <code>${esc(cleanRef)}</code>\n💰 مبلغ: <b>${money(pay.amount)} تومان</b>\n\n⏳ <b>وضعیت: در صف بررسی و تایید مدیریت</b>\n🔔 به محض بررسی توسط ادمین، نتیجه تایید یا رد خودکار در همین ربات برای شما ارسال خواهد شد.\nهمچنین می‌توانید در بخش «👤 حساب من» وضعیت لحظه‌ای را مشاهده کنید.`, s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }], [{ text: '👤 حساب من', callback_data: 'm:acc' }]] : mainKb(user, isAdmin));
+    notifyPlatformAdmins(db, env, pay.proof_platform || p, `🧾 کد پیگیری پرداخت #${faNum(pay.id)} ضمیمه شد: <code>${esc(cleanRef)}</code>`);
+    return sendBot(bBase(p), T, chatId, `✅ <b>کد پیگیری با موفقیت به عکس رسید ضمیمه شد!</b>\n━━━━━━━━━━━━━━━━━━\n🆔 شناسه پرداخت: <b>#${faNum(pay.id)}</b>\n🧾 کد پیگیری: <code>${esc(cleanRef)}</code>\n💰 مبلغ: <b>${money(pay.amount)} تومان</b>\n\n⏳ <b>وضعیت: در صف بررسی و تایید مدیریت</b>\n🔔 به محض بررسی توسط ادمین، نتیجه تایید یا رد خودکار در همین ربات برای شما ارسال خواهد شد.\nهمچنین می‌توانید در بخش «👤 حساب من» وضعیت لحظه‌ای را مشاهده کنید.`, s.data.room ? [[{ text: '🔙 بازگشت به روم', callback_data: `rm:${s.data.room}` }], [{ text: '👤 حساب من', callback_data: 'm:acc' }]] : mainKb(user, isAdmin));
   }
   if (s.flow === 'topamount') {
     const amount = num(numFa(text).replace(/[,،]/g, ''));
@@ -1985,7 +2050,7 @@ async function handleBotMessage(db, env, p, msg) {
     s.flow = 'topref'; s.data.amount = amount;
     await setBState(db, p, chatId, s);
     if (s.data.method === 'card') {
-      return sendBot(bBase(p), T, chatId, `💳 <b>پرداخت کارت به کارت</b>\n━━━━━━━━━━━━━━━━━━\n🏦 بانک: ${esc(stg(st, 'bank_name', '')) || '—'}\n🔢 شماره کارت:\n<code>${esc(stg(st, 'card_number', ''))}</code>\n👤 به نام: ${esc(stg(st, 'card_name', '')) || '—'}\n💰 مبلغ: <b>${money(amount)} تومان</b>\n\n⚠️ مبلغ را دقیقاً ${money(amount)} تومان واریز کن.\n📸 سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی).\n🧾 کد پیگیری اختیاری است — می‌توانی در کپشن عکس بنویسی یا جداگانه بفرستی:`, [[{ text: '❌ لغو', callback_data: 'm:top' }]]);
+      return sendBot(bBase(p), T, chatId, `💳 <b>پرداخت کارت به کارت (شارژ کیف پول)</b>\n━━━━━━━━━━━━━━━━━━\n🏦 بانک: ${esc(stg(st, 'bank_name', '')) || '—'}\n🔢 شماره کارت:\n<code>${esc(stg(st, 'card_number', ''))}</code>\n👤 به نام: ${esc(stg(st, 'card_name', '')) || '—'}\n💰 مبلغ: <b>${money(amount)} تومان</b>\n\n⚠️ مبلغ را دقیقاً ${money(amount)} تومان واریز کن.\n📸 سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی).\n❌ توجه: پیگیری تنها با کد متنی امکان‌پذیر نیست و ارسال عکس فیش الزامی است.`, [[{ text: '❌ لغو', callback_data: 'm:top' }]]);
     }
     return sendBot(bBase(p), T, chatId, `🏦 <b>پرداخت آنلاین</b>\n\nمبلغ: <b>${money(amount)} تومان</b>\nبا دکمه زیر پرداخت کن و سپس <b>عکس رسید</b> را همین‌جا بفرست (الزامی):\n🧾 کد پیگیری اختیاری است.`, [[{ text: '🏦 رفتن به درگاه', url: String(stg(st, 'gateway_url', '')).replace('{amount}', String(amount)).replace('{desc}', encodeURIComponent('Topup')) }], [{ text: '❌ لغو', callback_data: 'm:top' }]]);
   }
@@ -2060,6 +2125,7 @@ async function apiRoute(req, env, db, url) {
   if (!db) return j({ ok: false, error: 'D1 database not bound. Add DB binding in worker settings.' }, 500);
   const pm = p.match(/^\/api\/rooms\/(\d+)(\/(join|leave|publish|status|remove))?$/);
   const prm = p.match(/^\/api\/payments\/(\d+)\/ref$/);
+  const ppm = p.match(/^\/api\/payments\/(\d+)\/photo$/);
   const pym = p.match(/^\/api\/payments\/(\d+)\/(approve|reject)$/);
   const pzm = p.match(/^\/api\/prizes\/(\d+)\/(approve|reject)$/);
   const pum = p.match(/^\/api\/users\/(\d+)\/(role|ban)$/);
@@ -2070,11 +2136,13 @@ async function apiRoute(req, env, db, url) {
     if (p === '/api/me') return apiMe(db, req);
     if (p === '/api/rooms') return apiRooms(db, url);
     if (pm && !p.endsWith('/join')) return apiRoomGet(db, req, num(pm[1]));
+    if (ppm) return apiPaymentPhoto(db, env, req, num(ppm[1]));
     if (p === '/api/payments') return apiPayments(db, req, url);
     if (p === '/api/prizes') return apiPrizes(db, req, url);
     if (p === '/api/users') return apiUsers(db, req, url);
     if (p === '/api/stats') return apiStats(db);
     if (p === '/api/settings') return apiSettingsGet(db, req);
+    if (p === '/api/meta') return apiMetaWeaponsGet(db);
     if (p === '/api/webhook/status') return apiWebhookStatus(db, env, req, origin);
   }
   if (m === 'POST') {
@@ -2086,7 +2154,8 @@ async function apiRoute(req, env, db, url) {
       if (tk) await db.prepare('DELETE FROM sessions WHERE token=?1').bind(tk[1]).run();
       return j({ ok: true });
     }
-    if (p === '/api/me/password') return apiMePassword(db, req);
+    if (p === '/api/meta') return apiMetaWeaponsSet(db, req);
+    if (p === '/api/me/password' || p === '/api/password') return apiMePassword(db, req);
     if (p === '/api/me/update' || p === '/api/me') return apiMeUpdate(db, req);
     if (p === '/api/link') return apiLink(db, env, req);
     if (p === '/api/rooms') return apiRoomCreate(db, env, req);

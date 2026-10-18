@@ -38,7 +38,7 @@ app.all('/api/*', async (req, res) => {
   } catch (err) {
     console.warn(`[Proxy] Worker unreachable at ${targetUrl}:`, err.message);
     if (req.path === '/api/health') {
-      return res.json({ ok: true, service: 'CODM Rooms Platform (Worker Proxy)', version: '1.5.2' });
+      return res.json({ ok: true, service: 'CODM Rooms Platform (Worker Proxy)', version: '2.2.0' });
     }
     if (req.path === '/api/public/stats') {
       return res.json({ ok: true, users: 0, rooms: 0, openRooms: 0, entries: 0, prizesPaid: 0 });

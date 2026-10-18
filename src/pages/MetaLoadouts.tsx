@@ -1,174 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MetaWeapon } from '../types';
 import { AudioFX } from '../services/audio';
+import { ApiService } from '../services/api';
+import { DEFAULT_META_WEAPONS } from '../data/defaultMeta';
 
 interface MetaLoadoutsProps {
   lang: 'fa' | 'en';
   onToast: (msg: string, type?: 'info' | 'ok' | 'err' | 'warn') => void;
 }
 
-const META_WEAPONS: MetaWeapon[] = [
-  {
-    id: 'grau',
-    name: 'GRAU 5.56',
-    type: 'تفنگ تهاجمی (Assault Rifle)',
-    typeEn: 'Assault Rifle',
-    tier: 'TIER S+',
-    camo: 'camo-damascus',
-    role: 'متای اصلی سیزن — صفر لگد و دقت ماورایی در مسافت‌های دور',
-    seasonMeta: 'Season #1 Universal Meta Pick',
-    stats: {
-      damage: 82,
-      fireRate: 73,
-      accuracy: 88,
-      mobility: 76,
-      range: 85,
-      control: 92
-    },
-    attachments: [
-      { slot: 'لوله', slotEn: 'Barrel', name: 'Tempus 26.4" Archangel' },
-      { slot: 'قنداق', slotEn: 'Stock', name: 'No Stock (سرعت موومنت)' },
-      { slot: 'خشاب', slotEn: 'Ammunition', name: '50 Round Mags' },
-      { slot: 'دستگیره زیرین', slotEn: 'Underbarrel', name: 'Cronen Shark II' },
-      { slot: 'دستگیره عقب', slotEn: 'Rear Grip', name: 'FTAC R-89 Rubber' }
-    ],
-    code: 'GRAU-556-2A4B8C1D9E'
-  },
-  {
-    id: 'dlq',
-    name: 'DL Q33',
-    type: 'تفنگ تک‌تیرانداز (Sniper Rifle)',
-    typeEn: 'Sniper Rifle',
-    tier: 'TIER GOD',
-    camo: 'camo-diamond',
-    role: 'سلطان بی‌رقیب تک‌تیراندازها — وان‌شات تضمینی تا قفسه سینه',
-    seasonMeta: 'Elite Competitive Sniper Meta',
-    stats: {
-      damage: 96,
-      fireRate: 28,
-      accuracy: 94,
-      mobility: 55,
-      range: 98,
-      control: 70
-    },
-    attachments: [
-      { slot: 'لوله', slotEn: 'Barrel', name: 'MIP Light' },
-      { slot: 'قنداق', slotEn: 'Stock', name: 'YKM Combat Stock' },
-      { slot: 'لیزر', slotEn: 'Laser', name: 'OWC Laser - Tactical' },
-      { slot: 'دستگیره عقب', slotEn: 'Rear Grip', name: 'Granulated Grip Tape' },
-      { slot: 'پِرک', slotEn: 'Perk', name: 'Disable (کاهش سرعت دشمن)' }
-    ],
-    code: 'DLQ-33-1A7B9C3D5F'
-  },
-  {
-    id: 'switchblade',
-    name: 'SWITCHBLADE X9',
-    type: 'مسلسل سبک (SMG)',
-    typeEn: 'Submachine Gun',
-    tier: 'TIER S',
-    camo: 'camo-darkmatter',
-    role: 'شاه نبردهای نزدیک — فایر ریت وحشتناک و سرعت ای دی اس فوق‌العاده',
-    seasonMeta: 'Close-Quarters Rusher Meta',
-    stats: {
-      damage: 78,
-      fireRate: 91,
-      accuracy: 74,
-      mobility: 98,
-      range: 65,
-      control: 80
-    },
-    attachments: [
-      { slot: 'شعله‌پوش', slotEn: 'Muzzle', name: 'Monolithic Suppressor' },
-      { slot: 'لوله', slotEn: 'Barrel', name: 'MIP Extended Light' },
-      { slot: 'قنداق', slotEn: 'Stock', name: 'YKM Light Stock' },
-      { slot: 'لیزر', slotEn: 'Laser', name: 'OWC Laser - Tactical' },
-      { slot: 'خشاب', slotEn: 'Ammunition', name: 'Extended Mag A' }
-    ],
-    code: 'SWX-9-4A2B6C8D1K'
-  },
-  {
-    id: 'krm',
-    name: 'KRM-262',
-    type: 'شاتگان (Shotgun)',
-    typeEn: 'Shotgun',
-    tier: 'TIER S',
-    camo: 'camo-gold',
-    role: 'اسنایپر دستی بتل رویال و مولتی — وان‌تپ قطعی در فاصله نزدیک',
-    seasonMeta: 'Battle Royale & S&D Meta Breaker',
-    stats: {
-      damage: 98,
-      fireRate: 35,
-      accuracy: 68,
-      mobility: 84,
-      range: 58,
-      control: 52
-    },
-    attachments: [
-      { slot: 'دهانه', slotEn: 'Muzzle', name: 'Marauder Suppressor' },
-      { slot: 'لوله', slotEn: 'Barrel', name: 'Extended Barrel (+2)' },
-      { slot: 'قنداق', slotEn: 'Stock', name: 'No Stock' },
-      { slot: 'لیزر', slotEn: 'Laser', name: 'MIP Laser 5mW' },
-      { slot: 'دستگیره عقب', slotEn: 'Rear Grip', name: 'Stippled Grip Tape' }
-    ],
-    code: 'KRM-262-8F3A1C9B7E'
-  },
-  {
-    id: 'oden',
-    name: 'ODEN',
-    type: 'تفنگ تهاجمی سنگین (Heavy AR)',
-    typeEn: 'Heavy Assault Rifle',
-    tier: 'TIER S',
-    camo: 'camo-damascus',
-    role: '۲ تیر برای کشتن — بیشترین دمیج در بین تفنگ‌های رایفل اتوماتیک',
-    seasonMeta: 'High-Damage Two-Tap Specialist',
-    stats: {
-      damage: 92,
-      fireRate: 52,
-      accuracy: 86,
-      mobility: 64,
-      range: 92,
-      control: 78
-    },
-    attachments: [
-      { slot: 'دهانه', slotEn: 'Muzzle', name: 'Colossus Suppressor' },
-      { slot: 'لوله', slotEn: 'Barrel', name: 'OWC Marksman' },
-      { slot: 'قنداق', slotEn: 'Stock', name: 'YKM Combat Stock' },
-      { slot: 'لیزر', slotEn: 'Laser', name: 'OWC Laser - Tactical' },
-      { slot: 'خشاب', slotEn: 'Ammunition', name: 'Duplex Ammo (دو تیر)' }
-    ],
-    code: 'ODEN-12-7K4M9N2P8Q'
-  },
-  {
-    id: 'cx9',
-    name: 'CX-9',
-    type: 'مسلسل سرعتی (Burst/Rapid SMG)',
-    typeEn: 'Rapid SMG',
-    tier: 'TIER A+',
-    camo: 'camo-diamond',
-    role: 'خشاب ۱۲ تیری هالوپوینت با دمیج برست مرگبار در هدشات',
-    seasonMeta: 'Agile Mid-Range Flex SMG',
-    stats: {
-      damage: 80,
-      fireRate: 94,
-      accuracy: 81,
-      mobility: 95,
-      range: 62,
-      control: 82
-    },
-    attachments: [
-      { slot: 'لوله', slotEn: 'Barrel', name: 'CX-38S Integrated Suppressor' },
-      { slot: 'قنداق', slotEn: 'Stock', name: 'CX-FR Stock' },
-      { slot: 'لیزر', slotEn: 'Laser', name: 'OWC Laser - Tactical' },
-      { slot: 'خشاب', slotEn: 'Ammunition', name: '50 Round Drum' },
-      { slot: 'پِرک', slotEn: 'Perk', name: 'Sleight of Hand' }
-    ],
-    code: 'CX-9-3X6Y8Z1W5V'
-  }
-];
-
 export const MetaLoadouts: React.FC<MetaLoadoutsProps> = ({ lang, onToast }) => {
+  const [weapons, setWeapons] = useState<MetaWeapon[]>(DEFAULT_META_WEAPONS);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [loading, setLoading] = useState(false);
   const isEn = lang === 'en';
+
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('codm_meta_weapons');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setWeapons(parsed);
+        }
+      }
+    } catch (e) {}
+
+    setLoading(true);
+    ApiService.getMetaWeapons()
+      .then((res) => {
+        if (res && Array.isArray(res.weapons) && res.weapons.length > 0) {
+          setWeapons(res.weapons);
+          localStorage.setItem('codm_meta_weapons', JSON.stringify(res.weapons));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const categories = [
     { id: 'all', nameFa: 'همه اسلحه‌ها', nameEn: 'All Weapons' },
@@ -178,12 +46,13 @@ export const MetaLoadouts: React.FC<MetaLoadoutsProps> = ({ lang, onToast }) => 
     { id: 'shotgun', nameFa: 'شاتگان (Shotgun)', nameEn: 'Shotguns' }
   ];
 
-  const filteredWeapons = META_WEAPONS.filter((w) => {
+  const filteredWeapons = weapons.filter((w) => {
     if (selectedCategory === 'all') return true;
-    if (selectedCategory === 'ar') return w.id === 'grau' || w.id === 'oden';
-    if (selectedCategory === 'sniper') return w.id === 'dlq';
-    if (selectedCategory === 'smg') return w.id === 'switchblade' || w.id === 'cx9';
-    if (selectedCategory === 'shotgun') return w.id === 'krm';
+    const typeStr = (w.type + ' ' + (w.typeEn || '') + ' ' + w.id + ' ' + w.name).toLowerCase();
+    if (selectedCategory === 'ar') return typeStr.includes('ar') || typeStr.includes('assault') || typeStr.includes('تهاجمی') || typeStr.includes('رایفل');
+    if (selectedCategory === 'sniper') return typeStr.includes('sniper') || typeStr.includes('تک‌تیر') || typeStr.includes('اسنایپر');
+    if (selectedCategory === 'smg') return typeStr.includes('smg') || typeStr.includes('مسلسل') || typeStr.includes('submachine');
+    if (selectedCategory === 'shotgun') return typeStr.includes('shotgun') || typeStr.includes('شاتگان');
     return true;
   });
 
@@ -221,105 +90,109 @@ export const MetaLoadouts: React.FC<MetaLoadoutsProps> = ({ lang, onToast }) => 
         ))}
       </div>
 
-      <div className="meta-gun-grid">
-        {filteredWeapons.map((gun) => (
-          <div key={gun.id} className="gun-card">
-            <div className="gun-card-top">
-              <div className="gun-meta-title">
-                <h3>{gun.name}</h3>
-                <div className="gun-meta-type">{isEn ? gun.typeEn : gun.type}</div>
+      {loading && weapons.length === 0 ? (
+        <div className="loadwrap">
+          <div className="spinner" />
+          <p>{isEn ? 'Loading weapon attachments...' : 'در حال بارگذاری لوداوت‌های فصل...'}</p>
+        </div>
+      ) : (
+        <div className="meta-grid">
+          {filteredWeapons.map((w) => (
+            <div key={w.id} className="meta-card">
+              <div className="meta-card-top">
+                <div className="meta-badge-box">
+                  <span className="badge-tier">{w.tier}</span>
+                  <span className="badge-season">{w.seasonMeta}</span>
+                </div>
+                <div className={`meta-camo-indicator ${w.camo || 'camo-damascus'}`} />
               </div>
-              <span className="gun-tier-badge">{gun.tier}</span>
+
+              <div className="meta-card-hero">
+                <div className="meta-gun-title">
+                  <h2>{w.name}</h2>
+                  <span className="meta-gun-type">{isEn ? (w.typeEn || w.type) : w.type}</span>
+                </div>
+                <p className="meta-gun-role">{w.role}</p>
+              </div>
+
+              {/* Stats Bar */}
+              <div className="meta-stats-grid">
+                <div className="stat-row">
+                  <span>{isEn ? 'Damage' : 'قدرت دمیج'}</span>
+                  <div className="stat-track">
+                    <div className="stat-fill" style={{ width: `${w.stats.damage}%` }} />
+                  </div>
+                  <b>{w.stats.damage}</b>
+                </div>
+                <div className="stat-row">
+                  <span>{isEn ? 'Fire Rate' : 'سرعت شلیک'}</span>
+                  <div className="stat-track">
+                    <div className="stat-fill" style={{ width: `${w.stats.fireRate}%` }} />
+                  </div>
+                  <b>{w.stats.fireRate}</b>
+                </div>
+                <div className="stat-row">
+                  <span>{isEn ? 'Accuracy' : 'دقت تیراندازی'}</span>
+                  <div className="stat-track">
+                    <div className="stat-fill" style={{ width: `${w.stats.accuracy}%` }} />
+                  </div>
+                  <b>{w.stats.accuracy}</b>
+                </div>
+                <div className="stat-row">
+                  <span>{isEn ? 'Mobility' : 'سرعت موومنت'}</span>
+                  <div className="stat-track">
+                    <div className="stat-fill" style={{ width: `${w.stats.mobility}%` }} />
+                  </div>
+                  <b>{w.stats.mobility}</b>
+                </div>
+                <div className="stat-row">
+                  <span>{isEn ? 'Range' : 'بُرد موثر'}</span>
+                  <div className="stat-track">
+                    <div className="stat-fill" style={{ width: `${w.stats.range}%` }} />
+                  </div>
+                  <b>{w.stats.range}</b>
+                </div>
+                <div className="stat-row">
+                  <span>{isEn ? 'Control' : 'کنترل لگد'}</span>
+                  <div className="stat-track">
+                    <div className="stat-fill" style={{ width: `${w.stats.control}%` }} />
+                  </div>
+                  <b>{w.stats.control}</b>
+                </div>
+              </div>
+
+              {/* Attachments Blueprint */}
+              <div className="meta-att-list">
+                <h4>🛠️ {isEn ? 'Gunsmith Attachments' : 'اتچمنت‌های اختصاصی'}</h4>
+                <div className="att-items">
+                  {w.attachments.map((att, idx) => (
+                    <div key={idx} className="att-item">
+                      <span className="att-slot">{isEn ? (att.slotEn || att.slot) : att.slot}:</span>
+                      <span className="att-name">{att.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Gunsmith Share Code */}
+              <div className="meta-code-box">
+                <div className="code-label">{isEn ? 'CODM Share Code:' : 'کد اشتراک در بازی:'}</div>
+                <div className="code-val">
+                  <code>{w.code}</code>
+                  <button
+                    type="button"
+                    className="btn primary sm"
+                    onClick={() => handleCopyCode(w.code)}
+                    title={isEn ? 'Copy Gunsmith Code' : 'کپی کد گان‌اسمیت'}
+                  >
+                    📋 {isEn ? 'Copy' : 'کپی کد'}
+                  </button>
+                </div>
+              </div>
             </div>
-
-            <div className="gun-blueprint-area">
-              <div className="gun-camo-preview">
-                <span style={{ filter: 'drop-shadow(0 0 10px rgba(255,159,26,0.5))' }}>
-                  {gun.id === 'dlq' ? '🎯' : gun.id === 'krm' ? '💥' : gun.id === 'switchblade' || gun.id === 'cx9' ? '⚡' : '🔥'}
-                </span>
-              </div>
-
-              <div style={{ fontSize: '12px', color: '#ffd08a', fontStyle: 'italic', textAlign: 'center' }}>
-                {isEn ? gun.seasonMeta : gun.role}
-              </div>
-
-              <div className="gun-stats-radar">
-                <div className="stat-row">
-                  <span className="stat-name">{isEn ? 'Damage' : 'دمیج'}</span>
-                  <div className="stat-meter">
-                    <div className="stat-meter-fill" style={{ width: `${gun.stats.damage}%` }} />
-                  </div>
-                  <span className="stat-val">{gun.stats.damage}</span>
-                </div>
-
-                <div className="stat-row">
-                  <span className="stat-name">{isEn ? 'Fire Rate' : 'فایر ریت'}</span>
-                  <div className="stat-meter">
-                    <div className="stat-meter-fill" style={{ width: `${gun.stats.fireRate}%` }} />
-                  </div>
-                  <span className="stat-val">{gun.stats.fireRate}</span>
-                </div>
-
-                <div className="stat-row">
-                  <span className="stat-name">{isEn ? 'Accuracy' : 'دقت'}</span>
-                  <div className="stat-meter">
-                    <div className="stat-meter-fill" style={{ width: `${gun.stats.accuracy}%` }} />
-                  </div>
-                  <span className="stat-val">{gun.stats.accuracy}</span>
-                </div>
-
-                <div className="stat-row">
-                  <span className="stat-name">{isEn ? 'Mobility' : 'موومنت'}</span>
-                  <div className="stat-meter">
-                    <div className="stat-meter-fill" style={{ width: `${gun.stats.mobility}%` }} />
-                  </div>
-                  <span className="stat-val">{gun.stats.mobility}</span>
-                </div>
-
-                <div className="stat-row">
-                  <span className="stat-name">{isEn ? 'Range' : 'برد موثر'}</span>
-                  <div className="stat-meter">
-                    <div className="stat-meter-fill" style={{ width: `${gun.stats.range}%` }} />
-                  </div>
-                  <span className="stat-val">{gun.stats.range}</span>
-                </div>
-
-                <div className="stat-row">
-                  <span className="stat-name">{isEn ? 'Control' : 'کنترل لگد'}</span>
-                  <div className="stat-meter">
-                    <div className="stat-meter-fill" style={{ width: `${gun.stats.control}%` }} />
-                  </div>
-                  <span className="stat-val">{gun.stats.control}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="gun-attachments-list">
-              <div className="gun-attachments-title">
-                ⚙️ {isEn ? 'Gunsmith Attachments (5/5)' : 'اتچمنت‌های منتخب مسابقاتی (۵/۵):'}
-              </div>
-              {gun.attachments.map((att, idx) => (
-                <div key={idx} className="attachment-item">
-                  <span className="att-slot">{isEn ? att.slotEn : att.slot}</span>
-                  <span className="att-name">{att.name}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="gun-card-bot">
-              <div className="gun-code-wrap">
-                <span className="gun-code-val">{gun.code}</span>
-                <button
-                  className="btn sm good"
-                  onClick={() => handleCopyCode(gun.code)}
-                >
-                  📋 {isEn ? 'COPY' : 'کپی کد'}
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

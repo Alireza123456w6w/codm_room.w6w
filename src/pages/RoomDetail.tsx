@@ -36,6 +36,8 @@ export const RoomDetail: React.FC<RoomDetailProps> = ({
   const [cardInfo, setCardInfo] = useState<{ number?: string; name?: string; bank?: string } | null>(null);
   const [pendingPaymentId, setPendingPaymentId] = useState<number | null>(null);
   const [botLink, setBotLink] = useState('');
+  const [receiptImage, setReceiptImage] = useState('');
+  const [receiptUploading, setReceiptUploading] = useState(false);
 
   const t = I18N[lang];
   const isEn = lang === 'en';
@@ -127,22 +129,42 @@ export const RoomDetail: React.FC<RoomDetailProps> = ({
     }
   };
 
-  const handleSubmitTrackingCode = async () => {
-    if (!pendingPaymentId || !trackingCode.trim()) {
-      onToast(isEn ? 'Please enter tracking code' : 'لطفاً کد پیگیری را وارد کنید', 'warn');
+  const handleReceiptFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      onToast(isEn ? 'Image size must be less than 5MB' : 'حجم عکس فیش باید کمتر از ۵ مگابایت باشد', 'warn');
       return;
     }
-    setSubmitting(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setReceiptImage(reader.result as string);
+      onToast(isEn ? 'Receipt photo selected! Click submit to register.' : 'عکس فیش انتخاب شد! دکمه ارسال عکس رسید را بزنید.', 'info');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmitReceiptProof = async () => {
+    if (!pendingPaymentId) return;
+    if (!receiptImage) {
+      onToast(isEn ? 'Receipt photo is required! Please attach image or send via Bale bot.' : 'ارسال تصویر یا عکس فیش رسید الزامی است! با کد پیگیری به تنهایی امکان تایید وجود ندارد.', 'warn');
+      return;
+    }
+    setReceiptUploading(true);
     try {
-      await ApiService.submitPaymentRef(pendingPaymentId, trackingCode.trim());
+      await ApiService.submitPaymentRef(pendingPaymentId, trackingCode.trim(), receiptImage);
       AudioFX.play('lock');
-      onToast(isEn ? 'Receipt tracking code saved! Awaiting admin verification.' : 'کد پیگیری ثبت شد و پس از تایید مدیریت، جایگاه شما قطعی می‌شود.', 'ok');
+      onToast(isEn ? 'Receipt photo registered! Awaiting admin verification.' : 'عکس فیش با موفقیت ثبت شد و پس از بررسی ادمین، جایگاه شما قطعی می‌شود! 📸', 'ok');
       setBookingModal(false);
+      setCardInfo(null);
+      setPendingPaymentId(null);
+      setReceiptImage('');
+      setTrackingCode('');
       loadRoom();
     } catch (err: any) {
-      onToast(err.message || 'خطا در ثبت کد پیگیری', 'err');
+      onToast(err.message || 'خطا در ثبت عکس رسید', 'err');
     } finally {
-      setSubmitting(false);
+      setReceiptUploading(false);
     }
   };
 
@@ -561,35 +583,95 @@ export const RoomDetail: React.FC<RoomDetailProps> = ({
                   <div>💰 {isEn ? 'Exact Amount:' : 'مبلغ دقیق:'} <b>{isEn ? `${money(room.entry_fee)} Toman` : `${fa(money(room.entry_fee))} تومان`}</b></div>
                 </div>
 
-                {botLink && (
-                  <div style={{ marginTop: '12px', textAlign: 'center' }}>
-                    <a
-                      href={botLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn good sm"
-                      style={{ width: '100%' }}
-                    >
-                      💬 {isEn ? 'Open Bale Bot to Send Receipt Photo' : 'ورود به ربات بله جهت ارسال عکس فیش'}
-                    </a>
+                {/* ── دکمه اصلی و رسمی: ارسال عکس رسید در ربات بله ── */}
+                <div style={{ marginTop: '16px', background: 'rgba(46, 204, 113, 0.12)', border: '2px solid var(--good)', borderRadius: '12px', padding: '16px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--good)', marginBottom: '6px' }}>
+                    📸 {isEn ? 'Official Method: Submit Receipt Photo via Bale Bot' : 'روش اصلی و رسمی: ارسال عکس فیش در ربات بله (الزامی)'}
                   </div>
-                )}
+                  <p style={{ fontSize: '12px', color: 'var(--txt)', margin: '0 0 12px', lineHeight: 1.6 }}>
+                    {isEn
+                      ? '⚠️ Transactions are strictly tracked via receipt photos. Text-only tracking codes cannot be verified. Click below to send the receipt photo directly in Bale Bot for rapid approval.'
+                      : '⚠️ توجه مهم: به دلیل غیرقابل پیگیری بودن کدهای پیگیری متنی، تایید پرداخت‌ها منحصراً با ارسال تصویر فیش واریز در ربات بله انجام می‌شود. روی دکمه زیر بزنید و عکس رسید را بفرستید تا موقعیت شما فوراً قطعی شود.'}
+                  </p>
 
-                <div className="field" style={{ marginTop: '12px' }}>
-                  <label>{isEn ? 'Tracking Code / Ref Number:' : 'کد پیگیری تراکنش بانکی:'}</label>
-                  <input
-                    className="ltr"
-                    placeholder="123456789"
-                    value={trackingCode}
-                    onChange={(e) => setTrackingCode(e.target.value)}
-                  />
-                  <button
-                    className="btn blk sm"
-                    style={{ marginTop: '8px' }}
-                    disabled={submitting}
-                    onClick={handleSubmitTrackingCode}
+                  <a
+                    href={botLink || `https://ble.ir/codm_room_bot?start=pay_${pendingPaymentId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn primary lg"
+                    style={{
+                      width: '100%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      textDecoration: 'none',
+                      background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+                      fontSize: '15px',
+                      fontWeight: 800,
+                      boxShadow: '0 4px 18px rgba(46, 204, 113, 0.4)'
+                    }}
+                    onClick={() => AudioFX.play('lock')}
                   >
-                    {isEn ? 'Submit Tracking Code' : 'ثبت کد پیگیری'}
+                    💬 {isEn ? 'Open Bale Bot & Submit Receipt Photo' : '💬 ورود به ربات بله جهت ارسال عکس رسید'}
+                  </a>
+                </div>
+
+                {/* ── روش دوم: پیوست مستقیم عکس رسید در سایت ── */}
+                <div style={{ marginTop: '14px', background: 'var(--bg2)', border: '1px solid var(--line2)', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--txt)', marginBottom: '6px' }}>
+                    📎 {isEn ? 'Or attach receipt image directly on website (Image Required):' : '📎 یا عکس فیش را همین‌جا بارگذاری کنید (عکس رسید الزامی است):'}
+                  </div>
+
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleReceiptFileChange}
+                    style={{ fontSize: '12px', marginTop: '2px', width: '100%' }}
+                  />
+
+                  {receiptImage ? (
+                    <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                      <img
+                        src={receiptImage}
+                        alt="Preview"
+                        style={{ maxHeight: '140px', borderRadius: '8px', border: '2px solid var(--good)', display: 'inline-block' }}
+                      />
+                      <div style={{ fontSize: '11px', color: 'var(--good)', marginTop: '4px', fontWeight: 700 }}>
+                        ✅ {isEn ? 'Receipt photo attached' : 'عکس فیش پیوست شد و آماده ارسال است'}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '11px', color: 'var(--warn)', marginTop: '6px' }}>
+                      ⚠️ {isEn ? 'A receipt photo is strictly required' : 'انتخاب عکس یا اسکرین‌شات فیش الزامی است'}
+                    </div>
+                  )}
+
+                  <div className="field" style={{ marginTop: '10px', marginBottom: '8px' }}>
+                    <label style={{ fontSize: '11px' }}>{isEn ? 'Tracking number on receipt (Optional):' : 'کد پیگیری مندرج در فیش (اختیاری):'}</label>
+                    <input
+                      className="ltr"
+                      placeholder="e.g. 123456789"
+                      value={trackingCode}
+                      onChange={(e) => setTrackingCode(e.target.value)}
+                      style={{ padding: '6px 8px', fontSize: '12px' }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn sm"
+                    style={{
+                      width: '100%',
+                      background: receiptImage ? 'var(--good)' : 'rgba(255,255,255,0.1)',
+                      color: receiptImage ? '#000' : 'var(--mut)',
+                      fontWeight: 800,
+                      cursor: receiptImage ? 'pointer' : 'not-allowed'
+                    }}
+                    disabled={receiptUploading || !receiptImage}
+                    onClick={handleSubmitReceiptProof}
+                  >
+                    {receiptUploading ? 'در حال ارسال...' : (isEn ? '📤 Submit Receipt Photo on Website' : '📤 ثبت عکس رسید در سایت')}
                   </button>
                 </div>
               </div>

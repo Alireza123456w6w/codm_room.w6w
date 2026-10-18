@@ -41,12 +41,16 @@ export const Profile: React.FC<ProfileProps> = ({
   const [changingPassword, setChangingPassword] = useState(false);
   const [passSuccess, setPassSuccess] = useState(false);
 
-  // Topup Modal
+  // Topup Modal & Proof Submission
   const [topupModal, setTopupModal] = useState(false);
   const [topupAmount, setTopupAmount] = useState('50000');
   const [topupRef, setTopupRef] = useState('');
   const [topupCardData, setTopupCardData] = useState<{ number: string; name: string; bank: string } | null>(null);
   const [topupSubmitting, setTopupSubmitting] = useState(false);
+  const [topupPaymentId, setTopupPaymentId] = useState<number | null>(null);
+  const [topupBotLink, setTopupBotLink] = useState('');
+  const [topupReceiptImage, setTopupReceiptImage] = useState('');
+  const [topupReceiptUploading, setTopupReceiptUploading] = useState(false);
 
   // Bot Link Code
   const [linkCode, setLinkCode] = useState('');
@@ -160,12 +164,59 @@ export const Profile: React.FC<ProfileProps> = ({
       if (res.card) {
         setTopupCardData(res.card);
       }
-      onToast(isEn ? 'Top-up request registered. Awaiting admin verification.' : 'درخواست شارژ ثبت شد و پس از تایید مدیریت به کیف پول افزوده می‌شود.', 'ok');
+      if (res.payment_id) {
+        setTopupPaymentId(res.payment_id);
+      }
+      if (res.bot_link) {
+        setTopupBotLink(res.bot_link);
+      } else if (res.payment_id) {
+        setTopupBotLink(`https://ble.ir/codm_room_bot?start=pay_${res.payment_id}`);
+      }
+      onToast(isEn ? 'Top-up initiated. Please send receipt photo via Bale bot or attach here.' : 'درخواست شارژ ثبت شد. لطفاً عکس فیش را از طریق ربات بله ارسال یا در فرم پیوست فرمایید.', 'ok');
       loadData();
     } catch (err: any) {
       onToast(err.message || 'خطا در ثبت شارژ', 'err');
     } finally {
       setTopupSubmitting(false);
+    }
+  };
+
+  const handleReceiptFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      onToast(isEn ? 'Image size must be less than 5MB' : 'حجم عکس فیش باید کمتر از ۵ مگابایت باشد', 'warn');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setTopupReceiptImage(reader.result as string);
+      onToast(isEn ? 'Receipt photo selected! Click submit to confirm.' : 'عکس فیش انتخاب شد! دکمه ارسال عکس رسید را بزنید.', 'info');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSendProofImage = async () => {
+    if (!topupPaymentId) return;
+    if (!topupReceiptImage) {
+      onToast(isEn ? 'Receipt photo is required! Please attach image or send via Bale bot.' : 'ارسال تصویر یا عکس فیش رسید الزامی است! با کد پیگیری به تنهایی امکان تایید وجود ندارد.', 'warn');
+      return;
+    }
+    setTopupReceiptUploading(true);
+    try {
+      await ApiService.submitPaymentRef(topupPaymentId, topupRef.trim(), topupReceiptImage);
+      AudioFX.play('lock');
+      onToast(isEn ? 'Payment receipt photo submitted! 📸' : 'عکس فیش با موفقیت ثبت شد و برای مدیریت ارسال گردید! 📸', 'ok');
+      setTopupModal(false);
+      setTopupPaymentId(null);
+      setTopupCardData(null);
+      setTopupReceiptImage('');
+      setTopupRef('');
+      loadData();
+    } catch (err: any) {
+      onToast(err.message || 'خطا در ثبت تصویر فیش', 'err');
+    } finally {
+      setTopupReceiptUploading(false);
     }
   };
 
@@ -586,53 +637,185 @@ export const Profile: React.FC<ProfileProps> = ({
           <div className="modal">
             <button className="mclose" onClick={() => setTopupModal(false)} aria-label="بستن">✕</button>
 
-            <h3>💳 {isEn ? 'Top Up Wallet Balance' : 'افزایش موجودی کیف پول'}</h3>
+            <h3>💳 {isEn ? 'Top Up Tournament Wallet' : 'افزایش موجودی کیف پول مسابقاتی'}</h3>
             <p className="msub">
               {isEn
-                ? 'Enter the amount in Toman to deposit into your tournament wallet.'
-                : 'مبلغ مورد نظر را به تومان وارد کنید و فیش کارت به کارت را ثبت نمایید.'}
+                ? 'Transfer via Card-to-Card and send the receipt photo directly in Bale Bot for instant verification.'
+                : 'مبلغ مورد نظر را واریز کرده و جهت تایید فوری، عکس فیش را در ربات بله ارسال یا در فرم زیر پیوست کنید.'}
             </p>
 
-            <form onSubmit={handleTopup}>
-              <div className="field">
-                <label>{isEn ? 'Deposit Amount (Toman)' : 'مبلغ افزایش به تومان:'}</label>
-                <input
-                  type="number"
-                  className="ltr"
-                  value={topupAmount}
-                  onChange={(e) => setTopupAmount(e.target.value)}
-                  min="10000"
-                  step="5000"
-                  required
-                />
-              </div>
-
-              <div className="field">
-                <label>{isEn ? 'Transaction Tracking Code / Ref ID:' : 'کد پیگیری تراکنش کارت‌به‌کارت:'}</label>
-                <input
-                  className="ltr"
-                  placeholder="e.g. 98124501"
-                  value={topupRef}
-                  onChange={(e) => setTopupRef(e.target.value)}
-                />
-              </div>
-
-              {topupCardData && (
-                <div style={{ background: 'rgba(255,107,0,0.1)', padding: '14px', borderRadius: '8px', border: '1px solid rgba(255,159,26,0.4)', marginBottom: '14px', fontSize: '13px' }}>
-                  <div>🏦 بانک: <b>{topupCardData.bank}</b></div>
-                  <div style={{ marginTop: '4px' }}>🔢 شماره کارت: <code style={{ color: 'var(--good)', fontWeight: 800 }}>{topupCardData.number}</code></div>
-                  <div style={{ marginTop: '4px' }}>👤 به نام: <b>{topupCardData.name}</b></div>
+            {!topupCardData ? (
+              <form onSubmit={handleTopup}>
+                <div className="field">
+                  <label>{isEn ? 'Deposit Amount (Toman)' : 'مبلغ افزایش به تومان:'}</label>
+                  <input
+                    type="number"
+                    className="ltr"
+                    value={topupAmount}
+                    onChange={(e) => setTopupAmount(e.target.value)}
+                    min="10000"
+                    step="5000"
+                    required
+                  />
+                  <small style={{ color: 'var(--mut)', fontSize: '11px', marginTop: '4px', display: 'block' }}>
+                    حداقل مبلغ شارژ ۱۰,۰۰۰ تومان است.
+                  </small>
                 </div>
-              )}
 
-              <button
-                type="submit"
-                className="btn blk lg"
-                disabled={topupSubmitting}
-              >
-                {topupSubmitting ? '...' : (isEn ? 'Submit Topup Request' : 'ثبت درخواست افزایش موجودی')}
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  className="btn primary lg"
+                  disabled={topupSubmitting}
+                  style={{ width: '100%', marginTop: '12px' }}
+                >
+                  {topupSubmitting ? '...' : (isEn ? 'Proceed to Payment Card & Receipt' : '💳 دریافت شماره کارت و ثبت رسید')}
+                </button>
+              </form>
+            ) : (
+              <div>
+                {/* ── کارت اطلاعات حساب مقصد ── */}
+                <div style={{ background: 'rgba(255,107,0,0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(255,159,26,0.4)', marginBottom: '16px', fontSize: '13px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <b style={{ color: 'var(--acc2)', fontSize: '14px' }}>🏦 اطلاعات شماره کارت جهت واریز:</b>
+                    <span className="badge" style={{ background: 'rgba(46,204,113,0.2)', color: 'var(--good)' }}>پرداخت #{topupPaymentId}</span>
+                  </div>
+                  <div>🏦 بانک: <b>{topupCardData.bank || 'بانک سپه'}</b></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                    <span>🔢 شماره کارت:</span>
+                    <code style={{ color: 'var(--good)', fontSize: '16px', fontWeight: 800 }}>{topupCardData.number}</code>
+                    <button
+                      type="button"
+                      className="btn sm"
+                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(topupCardData.number);
+                        onToast(isEn ? 'Card number copied!' : 'شماره کارت کپی شد! ✅', 'ok');
+                      }}
+                    >
+                      📋 کپی
+                    </button>
+                  </div>
+                  <div style={{ marginTop: '6px' }}>👤 به نام: <b>{topupCardData.name}</b></div>
+                  <div style={{ marginTop: '6px', fontSize: '14px' }}>
+                    💰 مبلغ دقیق واریز: <b style={{ color: 'var(--acc)' }}>{money(Number(topupAmount))} تومان</b>
+                  </div>
+                </div>
+
+                {/* ── روش اصلی و رسمی: ارسال عکس رسید در ربات بله ── */}
+                <div style={{ background: 'rgba(46, 204, 113, 0.12)', border: '2px solid var(--good)', borderRadius: '12px', padding: '16px', marginBottom: '16px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--good)', marginBottom: '6px' }}>
+                    📸 {isEn ? 'Official Method: Submit Receipt Photo via Bale Bot' : 'روش اصلی و رسمی: ارسال عکس فیش در ربات بله (الزامی)'}
+                  </div>
+                  <p style={{ fontSize: '12px', color: 'var(--txt)', margin: '0 0 12px', lineHeight: 1.6 }}>
+                    {isEn
+                      ? '⚠️ Tracking transactions via text codes alone is not possible. You must send your receipt photo in Bale Bot for rapid automated balance credit.'
+                      : '⚠️ توجه مهم: به دلیل غیرقابل پیگیری بودن کدهای متنی، تایید تراکنش‌ها و شارژ کیف پول منحصراً با ارسال تصویر فیش واریز در ربات بله انجام می‌شود. روی دکمه زیر بزنید و عکس رسید را در ربات بفرستید تا حسابتان فوراً شارژ شود.'}
+                  </p>
+
+                  <a
+                    href={topupBotLink || `https://ble.ir/codm_room_bot?start=pay_${topupPaymentId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn primary lg"
+                    style={{
+                      width: '100%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      textDecoration: 'none',
+                      background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+                      fontSize: '15px',
+                      fontWeight: 800,
+                      boxShadow: '0 4px 18px rgba(46, 204, 113, 0.4)'
+                    }}
+                    onClick={() => AudioFX.play('lock')}
+                  >
+                    💬 {isEn ? 'Open Bale Bot & Submit Receipt Photo' : '💬 ورود به ربات بله جهت ارسال عکس رسید'}
+                  </a>
+                </div>
+
+                {/* ── روش دوم: پیوست مستقیم عکس رسید در سایت ── */}
+                <div style={{ background: 'var(--bg2)', border: '1px solid var(--line2)', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--txt)', marginBottom: '6px' }}>
+                    📎 {isEn ? 'Or upload receipt image directly on website (Image Required):' : '📎 یا عکس فیش را همین‌جا بارگذاری کنید (عکس رسید الزامی است):'}
+                  </div>
+
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleReceiptFileChange}
+                    style={{ fontSize: '12px', marginTop: '2px', width: '100%' }}
+                  />
+
+                  {topupReceiptImage ? (
+                    <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                      <img
+                        src={topupReceiptImage}
+                        alt="Receipt preview"
+                        style={{ maxHeight: '140px', borderRadius: '8px', border: '2px solid var(--good)', display: 'inline-block' }}
+                      />
+                      <div style={{ fontSize: '11px', color: 'var(--good)', marginTop: '4px', fontWeight: 700 }}>
+                        ✅ {isEn ? 'Receipt photo attached' : 'عکس فیش پیوست شد و آماده ارسال است'}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '11px', color: 'var(--warn)', marginTop: '6px' }}>
+                      ⚠️ {isEn ? 'A receipt photo is strictly required' : 'انتخاب عکس یا اسکرین‌شات فیش الزامی است'}
+                    </div>
+                  )}
+
+                  <div className="field" style={{ marginTop: '10px', marginBottom: '8px' }}>
+                    <label style={{ fontSize: '11.5px' }}>{isEn ? 'Tracking number on receipt (Optional):' : 'کد پیگیری مندرج در فیش (اختیاری):'}</label>
+                    <input
+                      className="ltr"
+                      placeholder="e.g. 98124501"
+                      value={topupRef}
+                      onChange={(e) => setTopupRef(e.target.value)}
+                      style={{ padding: '6px 10px', fontSize: '12px' }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn sm"
+                    style={{
+                      width: '100%',
+                      marginTop: '6px',
+                      background: topupReceiptImage ? 'var(--good)' : 'rgba(255,255,255,0.1)',
+                      color: topupReceiptImage ? '#000' : 'var(--mut)',
+                      fontWeight: 800,
+                      cursor: topupReceiptImage ? 'pointer' : 'not-allowed'
+                    }}
+                    disabled={topupReceiptUploading || !topupReceiptImage}
+                    onClick={handleSendProofImage}
+                  >
+                    {topupReceiptUploading ? 'در حال ثبت...' : (isEn ? '📤 Submit Receipt Photo on Website' : '📤 ثبت عکس رسید در سایت')}
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      setTopupCardData(null);
+                      setTopupPaymentId(null);
+                    }}
+                  >
+                    🔙 تغییر مبلغ
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => setTopupModal(false)}
+                  >
+                    بستن
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
