@@ -1590,6 +1590,9 @@ export const Admin: React.FC<AdminProps> = ({
               </div>
             </form>
           </div>
+        </div>
+      )}
+
       {/* ── مودال مشاهده عکس فیش و رسید پرداخت ── */}
       {viewReceiptModal && (
         <div className="modal-ov" onClick={(e) => { if (e.target === e.currentTarget) setViewReceiptModal(null); }}>
